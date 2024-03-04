@@ -1,0 +1,466 @@
+<!-- base.html -->
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.js"></script>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.2/css/all.css">
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/dataTables.bootstrap4.min.css"/>
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <!-- Your head content goes here -->
+    <title>{% block title %}EZShop{% endblock %}</title>
+
+    <style>
+     body {
+        padding-top: 56px;
+    }
+
+    .navbar-light {
+        border-bottom: 0.1em solid #f5f5f5;
+        box-shadow: 1px -2px 5px 4px #ccc;
+    }
+    thead{
+        background-color: #343a40;
+    color: #d9d9d9;
+    }
+    thead>tr>th>a{
+        color:#fff;
+    }
+    thead>tr>th>a:hover{
+        color:#a1b5ff;
+        text-decoration: none;
+    }
+    #sidebar {
+        height: 100%;
+        width: 200px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        background-color: #343a40;
+        padding-top: 56px;
+    }
+    .form-control{
+        line-height: 1.25 !important;
+    }
+    textarea {
+        overflow: auto;
+        resize: vertical;
+        width: 100%;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+    table{
+        border:0px !important;
+    }
+    #content {
+        margin-left: 200px;
+        padding: 15px;
+    }
+
+    #sidebar ul {
+        list-style: none;
+        padding: 0;
+    }
+
+    #sidebar ul li {
+        padding: 8px;
+        border-bottom: 1px solid #ddd;
+    }
+
+    #sidebar ul li a {
+        text-decoration: none;
+        color: #fff;
+    }
+
+    #sidebar ul li a:hover {
+        color: #e3e3e3;
+    }
+
+    .navbar-brand {
+        margin-left: 4%;
+    }
+    @media screen and (min-width:769px) {
+        .d-n{
+            display: none !important;
+        }
+    }
+    @media (max-width: 768px) {
+        #sidebar {
+            margin-left: -200px;
+            transition: margin-left 0.3s;
+        }
+       
+        #content {
+            margin-left: 0;
+        }
+
+        #sidebar.active {
+            margin-left: 0;
+        }
+
+        .menuBar,
+        .navbar-collapse {
+            list-style: none;
+        }
+
+        .menuBar {
+            margin-top: 10px;
+            margin-left: 0px;
+            padding-left: 15px !important;
+        }
+
+        .menuBar>li {
+            border-bottom: 1px solid #ddd;
+            margin: 0;
+        }
+
+        .menuBar>li>a {
+            color: #fff;
+            font-size: 20px !important;
+            text-decoration: none;
+            padding-bottom: 5px;
+        }
+    }
+        .logo{
+            filter: brightness(0) invert(1);
+            margin:0px;
+        }
+    /* Add new styles for the logout link */
+    .navbar-nav.ml-auto {
+        margin-right: 15px;
+    }
+
+    .navbar-nav.ml-auto a {
+        color: #fff;
+        margin-right: 15px;
+    }
+
+    .navbar-nav.ml-auto a:hover {
+        color: #000;
+    }
+
+    input,
+    select {
+        width: 100%;
+        padding: 0.375rem 0.75rem;
+        margin-bottom: 0.5rem; /* Adjusted margin */
+        font-size: 1rem;
+        line-height: 1.5;
+        color: #495057;
+        background-color: #fff;
+        background-clip: padding-box;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+
+    input:focus,
+    select:focus {
+        border-color: #80bdff;
+        outline: 0;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    .dropdown-menu {
+        background-color: #343a40; /* Background color */
+    }
+
+    .dropdown-item {
+        color: #fff; /* Text color */
+    }
+
+    .dropdown-item:hover {
+        background-color: #212529; /* Hover background color */
+    }
+    #user-forms{
+        display: grid;
+        grid-template-columns: repeat(3, 2fr);
+        grid-auto-rows: auto;
+        grid-gap: 10px;
+
+        
+    }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <a class="navbar-brand text-left" href="/home/">
+        <!-- <img src="{% static '/ezshopapp/mite.png' %}" alt="Mite Solutions" width="5%"> -->
+         <img src="https://mitesolutions.com/images/logo.png" class="logo" alt="Mite Solutions" width="5%"> 
+    </a>
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ml-auto pl-3">
+            <li class="d-n"><a href="/home/">Home</a></li>
+            
+        
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="shopDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Shop</a>
+            <div class="dropdown-menu" aria-labelledby="shopDropdown">
+                <a class="dropdown-item" href="/shop/">Shop List</a>
+                <a class="dropdown-item" href="/shop/create/">Create Shop</a>
+              
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="businessProfileDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Business Profile</a>
+            <div class="dropdown-menu" aria-labelledby="businessProfileDropdown">
+                <a class="dropdown-item" href="/create-business-profile/">Create Business Profile</a>
+                <a class="dropdown-item" href="/business/">Business Profile List</a>
+            </div>
+        </li>
+      
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="saleDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Sale & Day Closing</a>
+            <div class="dropdown-menu" aria-labelledby="saleDropdown">
+                
+                <a class="dropdown-item" href="/sale/salesbystaff/">Sales by Staff<br/>Products & Services</a>
+                
+                
+                <a class="dropdown-item" href="/sale/sales-by-staff-item-service/">Sales by Staff<br/>Item Service</a>
+                <a class="dropdown-item" href="/sale/sales-by-admin-service">Sales by Admin Service</a>
+                <a class="dropdown-item" href="/sale/dayclosing/">Day Closing</a>
+                <a class="dropdown-item" href="/sale/day-closing-report/">Day Closing Report</a>
+                <a class="dropdown-item" href="/sale/sales-report/">Sales Report</a>
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="roleDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Role</a>
+            <div class="dropdown-menu" aria-labelledby="roleDropdown">
+                <a class="dropdown-item" href="/role/">Role List</a>
+                <a class="dropdown-item" href="/role/create/">Create Role</a>
+            
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="employeeDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Employee</a>
+            <div class="dropdown-menu" aria-labelledby="employeeDropdown">
+                <a class="dropdown-item" href="/employee/">Employee List</a>
+                <a class="dropdown-item" href="/employee/create/">Create Employee</a>
+              
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="expenseTypeDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Expense Type</a>
+            <div class="dropdown-menu" aria-labelledby="expenseTypeDropdown">
+                <a class="dropdown-item" href="/expense-type/">Expense Type List</a>
+                <a class="dropdown-item" href="/expense-type/create/">Create Expense Type</a>
+            
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="receiptTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Receipt Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="receiptTransactionDropdown">
+                <a class="dropdown-item" href="/receipt-transaction/">Receipt Transaction List</a>
+                <a class="dropdown-item" href="/receipt-transaction/create/">Create Receipt Transaction</a>
+               
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="paymentTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Payment Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="paymentTransactionDropdown">
+                <a class="dropdown-item" href="/payment-transaction/">Payment Transaction List</a>
+                <a class="dropdown-item" href="/payment-transaction/create/">Create Payment Transaction</a>
+               
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="bankDepositDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Bank Deposit</a>
+            <div class="dropdown-menu" aria-labelledby="bankDepositDropdown">
+                <a class="dropdown-item" href="/bank-deposit/">Bank Deposit List</a>
+                <a class="dropdown-item" href="/bank-deposit/create/">Create Bank Deposit</a>
+               
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="serviceDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Service</a>
+            <div class="dropdown-menu" aria-labelledby="serviceDropdown">
+                <a class="dropdown-item" href="/service/">Service List</a>
+                <a class="dropdown-item" href="/service/create/">Create Service</a>
+               
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="productDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Product</a>
+            <div class="dropdown-menu" aria-labelledby="productDropdown">
+                <a class="dropdown-item" href="/product/">Product List</a>
+                <a class="dropdown-item" href="/product/create/">Create Product</a>
+                
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="employeeTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Employee Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="employeeTransactionDropdown">
+                <a class="dropdown-item" href="/employee-transaction/">Employee Transaction List</a>
+                <a class="dropdown-item" href="/employee-transaction/create/">Create Employee Transaction</a>
+                
+            </div>
+        </li>
+        <li class="dropdown d-n">
+            <a href="#" class="dropdown-toggle" id="dailySummaryDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Daily Summary</a>
+            <div class="dropdown-menu" aria-labelledby="dailySummaryDropdown">
+                <a class="dropdown-item" href="/daily-summary/">Daily Summary List</a>
+                <a class="dropdown-item" href="/daily-summary/create/">Create Daily Summary</a>
+               
+            </div>
+        </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{% url 'logout' %}">Logout</a>
+            </li>
+        </ul>
+    </div>
+</nav>
+<div id="sidebar">
+    <hr/>
+    <ul>
+        
+        <li><a href="/home/">Home</a></li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="shopDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Shop</a>
+            <div class="dropdown-menu" aria-labelledby="shopDropdown">
+                <a class="dropdown-item" href="/shop/">Shop List</a>
+                <a class="dropdown-item" href="/shop/create/">Create Shop</a>
+               
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="businessProfileDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Business Profile</a>
+            <div class="dropdown-menu" aria-labelledby="businessProfileDropdown">
+                <a class="dropdown-item" href="/create-business-profile/">Create Business Profile</a>
+                <a class="dropdown-item" href="/business/">Business Profile List</a>
+            </div>
+        </li>
+      
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="saleDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Sale & Day Closing</a>
+            <div class="dropdown-menu" aria-labelledby="saleDropdown">
+                
+                <a class="dropdown-item" href="/sale/salesbystaff/">Sales by Staff<br/>Products & Services</a>
+                
+                
+                <a class="dropdown-item" href="/sale/sales-by-staff-item-service/">Sales by Staff<br/>Item Service</a>
+                <a class="dropdown-item" href="/sale/sales-by-admin-service">Sales by Admin Service</a>
+                <a class="dropdown-item" href="/sale/dayclosing/">Day Closing</a>
+                <a class="dropdown-item" href="/sale/day-closing-report/">Day Closing Report</a>
+                <a class="dropdown-item" href="/sale/sales-report/">Sales Report</a>
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="roleDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Role</a>
+            <div class="dropdown-menu" aria-labelledby="roleDropdown">
+                <a class="dropdown-item" href="/role/">Role List</a>
+                <a class="dropdown-item" href="/role/create/">Create Role</a>
+            
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="employeeDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Employee</a>
+            <div class="dropdown-menu" aria-labelledby="employeeDropdown">
+                <a class="dropdown-item" href="/employee/">Employee List</a>
+                <a class="dropdown-item" href="/employee/create/">Create Employee</a>
+              
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="expenseTypeDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Expense Type</a>
+            <div class="dropdown-menu" aria-labelledby="expenseTypeDropdown">
+                <a class="dropdown-item" href="/expense-type/">Expense Type List</a>
+                <a class="dropdown-item" href="/expense-type/create/">Create Expense Type</a>
+            
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="receiptTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Receipt Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="receiptTransactionDropdown">
+                <a class="dropdown-item" href="/receipt-type/create/">Create Receipt Type</a>
+                <a class="dropdown-item" href="/receipt-transaction/">Receipt Transaction List</a>
+                <a class="dropdown-item" href="/receipt-transaction/create/">Create Receipt Transaction</a>
+               
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="paymentTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Payment Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="paymentTransactionDropdown">
+                <a class="dropdown-item" href="/payment-transaction/">Payment Transaction List</a>
+                <a class="dropdown-item" href="/payment-transaction/create/">Create Payment Transaction</a>
+               
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="bankDepositDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Bank Deposit</a>
+            <div class="dropdown-menu" aria-labelledby="bankDepositDropdown">
+                <a class="dropdown-item" href="/bank-deposit/">Bank Deposit List</a>
+                <a class="dropdown-item" href="/bank-deposit/create/">Create Bank Deposit</a>
+               
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="serviceDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Service</a>
+            <div class="dropdown-menu" aria-labelledby="serviceDropdown">
+                <a class="dropdown-item" href="/service/">Service List</a>
+                <a class="dropdown-item" href="/service/create/">Create Service</a>
+               
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="productDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Product</a>
+            <div class="dropdown-menu" aria-labelledby="productDropdown">
+                <a class="dropdown-item" href="/product/">Product List</a>
+                <a class="dropdown-item" href="/product/create/">Create Product</a>
+                
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="employeeTransactionDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Employee Transaction</a>
+            <div class="dropdown-menu" aria-labelledby="employeeTransactionDropdown">
+                <a class="dropdown-item" href="/employee-transaction/">Employee Transaction List</a>
+                <a class="dropdown-item" href="/employee-transaction/create/">Create Employee Transaction</a>
+                
+            </div>
+        </li>
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" id="dailySummaryDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Daily Summary</a>
+            <div class="dropdown-menu" aria-labelledby="dailySummaryDropdown">
+                <a class="dropdown-item" href="/daily-summary/">Daily Summary List</a>
+                <a class="dropdown-item" href="/daily-summary/create/">Create Daily Summary</a>
+               
+            </div>
+        </li>
+    </ul>
+    
+</div>
+
+<div id="content">
+    {% block content %}{% endblock %}
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+
+<script>
+    $(document).ready(function () {
+        $('#sidebarCollapse').on('click', function () {
+            $('#sidebar').toggleClass('active');
+        });
+    });
+</script>
+
+
+</body>
+</html>
