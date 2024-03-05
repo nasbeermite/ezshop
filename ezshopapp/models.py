@@ -5,7 +5,13 @@ from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.utils.translation import gettext as _
 from django.utils import timezone
 from django.forms import inlineformset_factory
+from django.db.models import Sum
 
+STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
 
 class Module(models.Model):
     name = models.CharField(max_length=255)
@@ -181,12 +187,6 @@ class Employee(models.Model):
 
 
 class DayClosing(models.Model):
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-    ]
-
     date = models.DateField()
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, blank=True, null=True)  # ForeignKey relationship with Employee model
     total_services = models.DecimalField(max_digits=8, decimal_places=2)
@@ -199,6 +199,25 @@ class DayClosing(models.Model):
     def __str__(self):
         return str(self.date)
 
+class DayClosingAdmin(models.Model):
+    date = models.DateField(default=timezone.now)
+    total_services = models.PositiveIntegerField(default=0)
+    total_sales = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_collection = models.DecimalField(max_digits=10, decimal_places=2)
+    advance = models.DecimalField(max_digits=10, decimal_places=2)
+    net_collection = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+
+    @classmethod
+    def calculate_totals(cls):
+        date = timezone.now().date()  # Set date to current date
+        total_services = SaleByAdminService.objects.filter(date=date).count()
+        total_sales = SaleByAdminService.objects.filter(date=date).aggregate(total_sales=Sum('total_amount'))['total_sales'] or 0
+        return {
+            'total_services': total_services,
+            'total_sales': total_sales,
+        }
+    
 class EmployeeTransaction(models.Model):
     TRANSACTION_TYPE_CHOICES = [
         ('service', 'Service Transaction'),
