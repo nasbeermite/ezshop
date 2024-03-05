@@ -163,33 +163,27 @@ def create_expense_type(request):
     else:
         form = ExpenseTypeForm()
     return render(request, 'create_expense_type.html', {'form': form})
-@login_required(login_url='login')
+
 def employee_list(request):
-    # Get query parameter for search
     query = request.GET.get('q')
-    
-    # Filter employees based on search query
     if query:
         employees = Employee.objects.filter(
-            Q(employee_id__icontains=query) | 
+            Q(employee_id__icontains=query) |
             Q(first_name__icontains=query) |
             Q(second_name__icontains=query)
         )
     else:
         employees = Employee.objects.all()
-    
-    # Pagination
-    paginator = Paginator(employees, 10)  # Show 10 employees per page
+
+    paginator = Paginator(employees, 10)
     page = request.GET.get('page')
     try:
         employees = paginator.page(page)
     except PageNotAnInteger:
-        # If page is not an integer, deliver first page.
         employees = paginator.page(1)
     except EmptyPage:
-        # If page is out of range (e.g. 9999), deliver last page of results.
         employees = paginator.page(paginator.num_pages)
-    
+
     return render(request, 'employee_list.html', {'employees': employees})
 
 class EmployeeCreateView(CreateView):
@@ -198,22 +192,24 @@ class EmployeeCreateView(CreateView):
     template_name = 'create_employee.html'
     success_url = reverse_lazy('employee_list')
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['business_profiles'] = BusinessProfile.objects.all()  # Retrieve all business profiles
-        return context
-
     def form_valid(self, form):
-        business_profile_id = self.request.POST.get('business_profile')
+        # Check if business_profile field exists in form data
+        business_profile_id = form.cleaned_data.get('business_profile')
+        print("Business Profile ID:", business_profile_id)  # Debugging statement
+        
         if business_profile_id:
+            # Retrieve the BusinessProfile object
             business_profile = BusinessProfile.objects.get(pk=business_profile_id)
-            form.instance.business_profile = business_profile
-
+            print("Business Profile:", business_profile)  # Debugging statement
             
-
-
+            # Assign the business profile to the employee instance
+            form.instance.business_profile = business_profile
+        else:
+            print("Business Profile ID not found")  # Debugging statement
+        
+        # Save the form
         return super().form_valid(form)
-
+    
 def get_employee_data(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
     data = {
@@ -222,7 +218,7 @@ def get_employee_data(request, employee_id):
     }
     return JsonResponse(data)
 
-@login_required(login_url='login')
+
 def employee_edit(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
     if request.method == 'POST':

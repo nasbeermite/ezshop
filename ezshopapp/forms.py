@@ -77,16 +77,17 @@ class ServiceForm(forms.ModelForm):
         model = Service
         fields = ['name', 'duration', 'vat', 'amount', 'max_discount_allowed', 'status']
 
+
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
-        fields = '__all__'
+        exclude = ['password']  # Exclude the 'password' field from the form
         widgets = {
             'passport_expiration_date': forms.DateInput(attrs={'type': 'date'}),
             'id_expiration_date': forms.DateInput(attrs={'type': 'date'}),
-            'password': forms.PasswordInput(),
             'joining_date': forms.DateInput(attrs={'type': 'date'}),
         }
+        
 class DayClosingForm(forms.ModelForm):
     class Meta:
         model = DayClosing

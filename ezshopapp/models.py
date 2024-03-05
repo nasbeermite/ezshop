@@ -1,20 +1,24 @@
 from django.db import models
-import pymysql
 from django.contrib.auth.models import User
-from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.utils.translation import gettext as _
 from django.utils import timezone
 from django.forms import inlineformset_factory
 from django.db.models import Sum
 
 STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-    ]
+    ('pending', 'Pending'),
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
+]
+
+PAYMENT_METHOD_CHOICES = (
+    ("cash", "Cash"),
+    ("card", "Card")
+)
 
 class Module(models.Model):
     name = models.CharField(max_length=255)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
@@ -26,9 +30,10 @@ class Shop(models.Model):
     num_users = models.PositiveIntegerField()
     vat_remainder = models.BooleanField(default=False)
     employee_transaction_window = models.BooleanField(default=False)
-    license_expiration_reminder = models.BooleanField(default=False)
-    employee_visa_expiration_reminder = models.BooleanField(default=False)
-    employee_passport_expiration_reminder = models.BooleanField(default=False)
+    license_expiration_reminder = models.BooleanField(default=False, verbose_name='License Expiration Reminder')
+    employee_visa_expiration_reminder = models.BooleanField(default=False, verbose_name='Employee Visa Expiration Reminder')
+    employee_passport_expiration_reminder = models.BooleanField(default=False, verbose_name='Employee Passport Expiration Reminder')
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
@@ -38,6 +43,7 @@ class UserProfile(models.Model):
     email = models.EmailField()
     username = models.CharField(max_length=100)
     password = models.CharField(max_length=100)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.username
@@ -53,9 +59,10 @@ class ShopAdmin(models.Model):
     vat_certificate = models.FileField(upload_to='vat_certificate/')
     address = models.TextField()
     admin_user = models.ForeignKey(User, on_delete=models.CASCADE)
-    license_expiration_reminder_days = models.PositiveIntegerField()
-    vat_submission_date_reminder_days = models.PositiveIntegerField()
-    employee_visa_expiration_reminder_days = models.PositiveIntegerField()
+    license_expiration_reminder_days = models.PositiveIntegerField(verbose_name='License Expiration Reminder (days)')
+    vat_submission_date_reminder_days = models.PositiveIntegerField(verbose_name='VAT Submission Date Reminder (days)')
+    employee_visa_expiration_reminder_days = models.PositiveIntegerField(verbose_name='Employee Visa Expiration Reminder (days)')
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return f"{self.shop.name} - {self.admin_user.username}"
@@ -71,9 +78,10 @@ class BusinessProfile(models.Model):
     vat_submission_date = models.DateField()
     vat_certificate_upload = models.FileField(upload_to='vat_certificates')
     address = models.TextField()
-    license_expiration_reminder_days = models.PositiveIntegerField()
-    vat_submission_date_reminder_days = models.PositiveIntegerField()
-    employee_visa_expiration_reminder_days = models.PositiveIntegerField()
+    license_expiration_reminder_days = models.PositiveIntegerField(verbose_name='License Expiration Reminder (days)')
+    vat_submission_date_reminder_days = models.PositiveIntegerField(verbose_name='VAT Submission Date Reminder (days)')
+    employee_visa_expiration_reminder_days = models.PositiveIntegerField(verbose_name='Employee Visa Expiration Reminder (days)')
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.shop.name
@@ -85,6 +93,7 @@ class AdminProfile(models.Model):
     email = models.EmailField()
     mobile = models.CharField(max_length=25, null=True)
     password = models.CharField(max_length=128, default='ezshop@2024')  # Add password field
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def save(self, *args, **kwargs):
         # Set the username and password for the associated user if they are not set already
@@ -100,18 +109,21 @@ class AdminProfile(models.Model):
 class Role(models.Model):
     name = models.CharField(max_length=255)
     modules = models.ManyToManyField(Module)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
     
 class ExpenseType(models.Model):
     name = models.CharField(max_length=255)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
 
 class ReceiptType(models.Model):
     name = models.CharField(max_length=255)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
@@ -120,6 +132,7 @@ class Bank(models.Model):
     name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=50)
     opening_balance = models.DecimalField(max_digits=10, decimal_places=2)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
@@ -129,18 +142,21 @@ class ReceiptTransaction(models.Model):
     receipt_type = models.ForeignKey(ReceiptType, on_delete=models.CASCADE)
     received_amount = models.DecimalField(max_digits=10, decimal_places=2)
     narration = models.TextField()
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
 class PaymentTransaction(models.Model):
     date = models.DateField()
     expense_type = models.ForeignKey(ExpenseType, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     narration = models.TextField()
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
 class BankDeposit(models.Model):
     date = models.DateField()
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     transaction_type = models.CharField(max_length=20)  # Cash, Cheque, Bank Transfer
     narration = models.TextField()
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
 class Service(models.Model):
     name = models.CharField(max_length=255)
@@ -149,6 +165,7 @@ class Service(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     max_discount_allowed = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.BooleanField(default=True)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
@@ -159,9 +176,11 @@ class Product(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     max_discount_allowed = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.BooleanField(default=True)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return self.name
+
 
 class Employee(models.Model):
     employee_id = models.CharField(max_length=10, unique=True)
@@ -178,13 +197,12 @@ class Employee(models.Model):
     transportation_allowance = models.DecimalField(max_digits=10, decimal_places=2)
     commission_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     joining_date = models.DateField()
-    job_role = models.CharField(max_length=255)
-    username = models.CharField(max_length=255)
-    password = models.CharField(max_length=255)
+    job_role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True)
+    business_profile = models.ForeignKey(BusinessProfile, on_delete=models.SET_NULL, null=True)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return f"{self.employee_id} - {self.first_name} {self.second_name}"
-
 
 class DayClosing(models.Model):
     date = models.DateField()
@@ -195,6 +213,7 @@ class DayClosing(models.Model):
     advance = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
     net_collection = models.DecimalField(max_digits=8, decimal_places=2)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return str(self.date)
@@ -207,6 +226,7 @@ class DayClosingAdmin(models.Model):
     advance = models.DecimalField(max_digits=10, decimal_places=2)
     net_collection = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     @classmethod
     def calculate_totals(cls):
@@ -233,6 +253,7 @@ class EmployeeTransaction(models.Model):
     payment_option = models.CharField(max_length=10, choices=[('cash', 'Cash'), ('card', 'Card')])
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, null=True, blank=True)
     day_closing = models.ForeignKey(DayClosing, on_delete=models.CASCADE, null=True, blank=True)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return f"Employee Transaction - {self.id}"
@@ -244,6 +265,7 @@ class DailySummary(models.Model):
     total_bank_deposit = models.DecimalField(max_digits=10, decimal_places=2)
     balance = models.DecimalField(max_digits=10, decimal_places=2)
     narration = models.TextField()
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def save(self, *args, **kwargs):
         # Calculate total_received_amount by summing employee transaction amounts
@@ -266,7 +288,7 @@ class DailySummary(models.Model):
         self.balance = balance
 
         super(DailySummary, self).save(*args, **kwargs)
-
+        self.created_on = timezone.now()
 
 class Sale(models.Model):
     date = models.DateField()
@@ -276,7 +298,7 @@ class Sale(models.Model):
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     tip = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
-
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
 class SaleItem(models.Model):
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
@@ -284,19 +306,9 @@ class SaleItem(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
 SaleItemFormSet = inlineformset_factory(Sale, SaleItem, fields=['product', 'quantity', 'price'])
-
-
-STATUS_CHOICES = (
-    ('pending', 'Pending'),
-    ('approved', 'Approved'),
-)
-
-    
-PAYMENT_METHOD_CHOICES=(
-    ("cash","Cash"),("card","Card")
-)
 
 class SaleByAdminService(models.Model):
     date = models.DateField(null=True)
@@ -307,6 +319,7 @@ class SaleByAdminService(models.Model):
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     tip = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_method = models.CharField(max_length=100)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def total_amount(self):
         return (self.price * self.quantity) - self.discount + self.tip
@@ -319,6 +332,7 @@ class SalesByAdminItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return str(self.date)
@@ -336,6 +350,7 @@ class SalesByStaffItemService(models.Model):
     discount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_("Discount"), default=0.0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_("Total Amount"), null=True)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, verbose_name=_("Payment Method"))
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
     def __str__(self):
         return f"Sale on {self.date}"
