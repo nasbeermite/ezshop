@@ -1,42 +1,75 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, TemplateView
 from django.views.generic.edit import CreateView, UpdateView, DeleteView, FormView
+import logging
 from django.urls import reverse_lazy
 from django.views import View
-from django.db import IntegrityError
-from django.http import HttpResponseRedirect
+from django.db import IntegrityError, transaction
+from django.http import HttpResponseRedirect, HttpResponseBadRequest, HttpResponse, JsonResponse
+from django.core.mail.backends.smtp import EmailBackend
+from django.conf import settings
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.forms import modelformset_factory
+from .constants import NATIONALITIES 
 from django.urls import reverse
 from django.forms import formset_factory
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import authenticate, login
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, Q
 from django.utils import timezone
-from django.db import transaction
 from django.contrib import messages
-from .models import Shop, ShopAdmin, User, Role, DayClosingAdmin, BusinessProfile, Employee, Sale, ExpenseType, SaleByAdminService, SalesByAdminItem, ReceiptType, Bank, SaleItem, Module, ReceiptTransaction, PaymentTransaction, BankDeposit, Service, Product, EmployeeTransaction, DailySummary, DayClosing, UserProfile
-from .forms import ShopForm, RoleForm, AdminProfileForm,  EmployeeForm, ExpenseTypeForm, ReceiptTypeForm, BankForm, ReceiptTransactionForm, PaymentTransactionForm, BankDepositForm, ServiceForm, ProductForm, EmployeeTransactionForm, DailySummaryForm
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .models import *
+from .forms import *
 from .serializers import LoginSerializer, SaleSerializer
 from django.contrib.auth.views import LogoutView, LoginView
-from .forms import CustomLoginForm, DayClosingForm, DayClosingFormAdmin, BusinessProfileForm, AdminUserForm, SalesByStaffItemServiceForm, SaleForm, SalesByAdminItemForm, SaleByAdminServiceForm
-from rest_framework import generics
-from django.http import HttpResponse
+from rest_framework import generics, viewsets
 from django.urls import get_resolver
-from django.db.models import Q
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
-from django.http import JsonResponse
 from django.urls.resolvers import RoutePattern
+from .serializers import *
+class SalesByStaffItemServiceViewSet(viewsets.ModelViewSet):
+    queryset = SalesByStaffItemService.objects.all()
+    serializer_class = SalesByStaffItemServiceSerializer
 
-# Assuming you have a form for admin users
-AdminUserForm = formset_factory(AdminUserForm, extra=1)
-@login_required
+class EmployeeViewSet(viewsets.ModelViewSet):
+    queryset = Employee.objects.all()
+    serializer_class = EmployeeSerializer
+
+class DayClosingViewSet(viewsets.ModelViewSet):
+    queryset = DayClosing.objects.all()
+    serializer_class = DayClosingSerializer
+
+
+class DayClosingViewSet(viewsets.ModelViewSet):
+    queryset = DayClosing.objects.all()
+    serializer_class = DayClosingSerializer
+    
+
+class DailySummaryViewSet(viewsets.ModelViewSet):
+    queryset = DailySummary.objects.all()
+    serializer_class = DailySummarySerializer
+    
+class CustomUserAddView(CreateView):
+    model = User
+    form_class = CustomUserCreationForm
+    template_name = 'admin/auth/user/add_form.html'
+    success_url = reverse_lazy('admin:index')  # Redirect to admin index after user creation
+
+custom_user_add_view = CustomUserAddView.as_view()
+
+
+#AdminUserForm = formset_factory(AdminUserForm, extra=1)
+@login_required(login_url='login')
 def sidebar(request):
-    # Determine the user's role
+
     is_superuser = request.user.is_superuser
     is_admin = request.user.groups.filter(name='Admin').exists()
     is_employee = not is_superuser and not is_admin
 
-    # Render the sidebar template with context based on the user's role
     return render(request, 'sidebar.html', {'user': request.user, 'is_superuser': is_superuser, 'is_admin': is_admin, 'is_employee': is_employee})
 
 class CustomLoginView(FormView):
@@ -56,18 +89,9 @@ class CustomLoginView(FormView):
             return super().form_invalid(form)
 
     def form_invalid(self, form):
-       
+
         return super().form_invalid(form)
 
-# class RegistrationView(FormView):
-#     template_name = 'registration.html'
-#     form_class = CustomUserCreationForm
-#     success_url = reverse_lazy('login')  # Redirect to login page after successful registration
-
-#     def form_valid(self, form):
-#         form.save()
-#         return super().form_valid(form)
-    
 class CustomLogoutView(LogoutView):
     next_page = '/login/' 
 
@@ -77,43 +101,74 @@ class ShopListView(ListView):
     context_object_name = 'shops'
 
     def get_queryset(self):
-        # Retrieve the queryset and order it by name in ascending order
+
         return Shop.objects.all().order_by('-name')
 
+# class ShopCreateView(CreateView):
+#     model = Shop
+#     form_class = ShopForm
+#     template_name = 'create_shop.html'
+#     success_url = reverse_lazy('shop_list')
 
+#     def form_valid(self, form):
+#         shop_instance = form.save(commit=False)
+
+#         username = form.cleaned_data['username']
+#         email = form.cleaned_data['email']
+#         password = form.cleaned_data['password']
+
+#         try:
+#             # Check if a superuser already exists for the given shop
+#             if User.objects.filter(is_superuser=True, shop=shop_instance).exists():
+#                 messages.error(self.request, "A superuser already exists for this shop.")
+#                 return redirect('shop_list')
+
+#             # Create a new superuser
+#             user = User.objects.create_superuser(username=username, email=email, password=password)
+#             user.is_staff = True  
+#             user.is_active = True
+#             user.is_superuser = True  
+#             user.save()
+
+#             shop_instance.user = user
+#             shop_instance.save()
+
+#             return super().form_valid(form)
+#         except IntegrityError:
+#             messages.error(self.request, "An error occurred while creating the shop.")
+#             return super().form_valid(form)
+        
+
+class ShopAdminCreateView(CreateView):
+    model = User
+    form_class = ShopAdminForm
+    template_name = 'create_admin_user.html'
+    success_url = '/home'
+
+    def form_valid(self, form):
+        user = form.save(commit=False)
+        user.set_password(form.cleaned_data['password'])
+        user.save()
+        shop = Shop.objects.create(name=user.username + "'s Shop", license_number="License-" + user.username)
+        ShopAdmin.objects.create(user=user, shop=shop)
+        return super().form_valid(form)
 
 class ShopCreateView(CreateView):
     model = Shop
     form_class = ShopForm
     template_name = 'create_shop.html'
-    success_url = reverse_lazy('shop_list')
+    success_url = '/login'
 
     def form_valid(self, form):
-        # Save the Shop instance
-        shop_instance = form.save(commit=False)
-        
-        # Extract username, email, and password from the form data
-        username = form.cleaned_data['username']
-        email = form.cleaned_data['email']
-        password = form.cleaned_data['password']
-
-        try:
-            # Create the new user with staff and active status
-            user = User.objects.create_user(username=username, email=email, password=password)
-            user.is_staff = True  # Grant staff access
-            user.is_active = True  # Activate the user account
-            user.save()
-
-            # Associate the created user with the shop
-            shop_instance.user = user
-            shop_instance.save()
-
+        shop = form.save(commit=False)
+        admin_user = self.request.user
+        if not ShopAdmin.objects.filter(user=admin_user).exists():
+            ShopAdmin.objects.create(user=admin_user, shop=shop)
             return super().form_valid(form)
-        except IntegrityError:
-            # Continue saving the form even if IntegrityError occurs for username
-            return super().form_valid(form)
-        
-        
+        else:
+            # Only one shop can be created under each user
+            return super().form_invalid(form)
+
 class ShopUpdateView(UpdateView):
     model = Shop
     form_class = ShopForm
@@ -125,82 +180,41 @@ class ShopDeleteView(DeleteView):
     template_name = 'delete_shop.html'
     success_url = reverse_lazy('shop_list')
 
-
 class RoleListView(ListView):
     model = Role
     template_name = 'role_list.html'
-
-
-# class RoleCreateView(TemplateView):
-#     template_name = 'create_role.html'
-
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         # Fetch all module names from the Module model
-#         modules = Module.objects.all()
-#         context['modules'] = modules
-#         return context
-
-#     def post(self, request, *args, **kwargs):
-#         # Extract data from the form
-#         role_name = request.POST.get('name')
-#         module_names = request.POST.getlist('modules')
-        
-#         # Create a new Role object
-#         new_role = Role.objects.create(name=role_name)
-        
-#         # Add modules to the role
-#         for module_name in module_names:
-#             module = get_object_or_404(Module, name=module_name)
-#             new_role.modules.add(module)
-        
-#         # Save the role object
-#         new_role.save()
-        
-#         # Redirect the user to a different page
-#         return HttpResponseRedirect(reverse('role_list'))
-
+@login_required
 def create_role(request):
     if request.method == 'POST':
-        # Extract data from the form
+
         role_name = request.POST.get('name')
         module_names = request.POST.getlist('modules')
         is_employee = request.POST.get('is_employee') == 'on'
-        
-        # Create a new Role object
+
         new_role = Role.objects.create(name=role_name, is_employee=is_employee)
-        
-        # Add modules to the role
+
         for module_name in module_names:
             module = Module.objects.get(name=module_name)
             new_role.modules.add(module)
-        
-        # Save the role object
+
         new_role.save()
-        
-        # Redirect to role list page
+
         return redirect('role_list')
     else:
         modules = Module.objects.all()
         return render(request, 'create_role.html', {'modules': modules})
-    
+
 def analytics_view(request):
-    # Fetch total number of employees
+
     total_employees = Employee.objects.all().count()
 
-    # Fetch total revenue
     total_revenue = DailySummary.objects.aggregate(total_revenue=Sum('amount'))['total_revenue']
 
-    # Fetch day closing total per day (replace 'dayclosing_values' with actual logic to fetch this data)
-    #dayclosing_values = get_dayclosing_totals()
-
-    # Render the template with the data
     return render(request, 'home.html', {
         'total_employees': total_employees,
         'total_revenue': total_revenue,
-      #  'dayclosing_values': dayclosing_values,
-    })
 
+    })
 
 class RoleUpdateView(TemplateView):
     template_name = 'update_role.html'
@@ -209,7 +223,7 @@ class RoleUpdateView(TemplateView):
         context = super().get_context_data(**kwargs)
         role_id = kwargs.get('pk')
         role = get_object_or_404(Role, pk=role_id)
-        modules = role.modules.all()  # Retrieve all modules associated with the role
+        modules = role.modules.all()  
         context['role'] = role
         context['modules'] = modules
         return context
@@ -218,27 +232,24 @@ class RoleUpdateView(TemplateView):
         role_id = kwargs.get('pk')
         role = get_object_or_404(Role, pk=role_id)
 
-        # Update role data based on POST data
         role_name = request.POST.get('name')
         role.name = role_name
 
-        # Handle the is_employee checkbox
         is_employee = request.POST.get('is_employee')
         if is_employee:
             role.is_employee = True
         else:
             role.is_employee = False
 
-        # Save the updated role
         role.save()
 
-        # Redirect to the role list page after updating
         return HttpResponseRedirect(reverse('role_list'))
-    
+
 class RoleDeleteView(DeleteView):
     model = Role
     template_name = 'delete_role.html'
     success_url = reverse_lazy('role_list')
+
 @login_required(login_url='login')
 def create_expense_type(request):
     if request.method == 'POST':
@@ -272,54 +283,50 @@ def employee_list(request):
 
     return render(request, 'employee_list.html', {'employees': employees})
 
-
-# class EmployeeCreateView(CreateView):
-#     model = Employee
-#     form_class = EmployeeForm
-#     template_name = 'create_employee.html'
-#     success_url = reverse_lazy('employee_list')
-
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         context['business_profiles'] = BusinessProfile.objects.all()  # Retrieve all business profiles
-#         return context
-
-#     def form_valid(self, form):
-#         business_profile_id = form.cleaned_data.get('business_profile')
-#         if business_profile_id:
-#             business_profile = BusinessProfile.objects.get(pk=business_profile_id)
-#             form.instance.business_profile = business_profile
-#             form.save()
-#         return super().form_valid(form)
-
-
+@login_required
 def create_employee(request):
-    error_occurred = False  # Flag to indicate whether an error occurred during saving
+    error_occurred = False  
+
+    # Fetch the shop details associated with the logged-in user
+    try:
+        shop_admin = ShopAdmin.objects.get(user=request.user)
+        shop = shop_admin.shop
+    except ShopAdmin.DoesNotExist:
+        shop = None
+
+    # if shop:
+    #     # Check the number of users created under this shop
+    #     num_users_created = Shop.objects.filter(num_users=shop.num_users)
+
+    #     # Check if the number of users exceeds the allowed limit
+    #     if num_users_created >= shop.num_users:
+    #         return HttpResponseBadRequest("Cannot create more employees. Maximum number of users reached for this shop.")
+
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
         if form.is_valid():
             try:
-                business_profile_id = form.cleaned_data.get('business_profile')
-                if business_profile_id:
-                    business_profile = BusinessProfile.objects.get(pk=business_profile_id)
-                    form.instance.business_profile = business_profile
-                    form.save()
-                    return redirect('employee_list')  # Redirect to the employee list page upon successful form submission
+                employee = form.save(commit=False)
+                employee.save()
+                return redirect('employee_list') 
             except Exception as e:
                 print("An error occurred while saving the form:", e)
-                error_occurred = True  # Set the flag to True if an error occurred during saving
-                # Optionally, you can log the error or perform other error handling here
+                error_occurred = True  
                 messages.error(request, "An error occurred while saving the form.")
     else:
         form = EmployeeForm()
-    
-    business_profiles = BusinessProfile.objects.all()
+
+    # Filter Business Profiles based on the shop associated with the logged-in user
+    business_profiles = BusinessProfile.objects.filter(name=shop)
+
     context = {
         'form': form,
         'business_profiles': business_profiles,
-        'error_occurred': error_occurred,  # Pass the flag in the context
+        'error_occurred': error_occurred,
+        'nationalities': NATIONALITIES,  # Pass NATIONALITIES to the template context
     }
     return render(request, 'create_employee.html', context)
+
 
 def get_employee_data(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
@@ -328,7 +335,6 @@ def get_employee_data(request, employee_id):
         'total_sales': employee.total_sales,
     }
     return JsonResponse(data)
-
 
 def employee_edit(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
@@ -347,6 +353,42 @@ def employee_delete(request, pk):
         employee.delete()
         return redirect('employee_list')
     return render(request, 'employee_delete.html', {'employee': employee})
+
+
+def employee_login(request):
+    if request.method == 'POST':
+        form = EmployeeLoginForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            password = form.cleaned_data['password']
+            
+            # Query the Employee model to check if the username and password match
+            try:
+                employee = Employee.objects.get(username=username)
+            except Employee.DoesNotExist:
+                employee = None
+            
+            # Check if the employee exists and if the password matches
+            if employee is not None and employee.password == password:
+                # If authentication is successful, create a session for the employee and redirect to the dashboard
+                request.session['employee_id'] = employee.pk
+                return redirect('employee_dashboard')
+            else:
+                # If authentication fails, display error message and reload login page
+                messages.error(request, "Invalid username or password.")
+                return redirect('employee_login')
+    else:
+        form = EmployeeLoginForm()
+    return render(request, 'employee_login.html', {'form': form})
+
+def employee_dashboard(request):
+    # Fetch all employees
+    employees = Employee.objects.all()
+    
+    context = {
+        'employees': employees
+    }
+    return render(request, 'employee_dashboard.html', context)
 
 
 class ExpenseTypeListView(ListView):
@@ -385,7 +427,6 @@ class ReceiptTransactionDeleteView(DeleteView):
     template_name = 'delete_receipt_transaction.html'
     success_url = reverse_lazy('receipt_transaction_list')
 
-
 class PaymentTransactionListView(ListView):
     model = PaymentTransaction
     template_name = 'payment_transaction_list.html'
@@ -407,44 +448,45 @@ class PaymentTransactionDeleteView(DeleteView):
     template_name = 'delete_payment_transaction.html'
     success_url = reverse_lazy('payment_transaction_list')
 
-
 class BankDepositListView(ListView):
     model = BankDeposit
     template_name = 'bank_deposit_list.html'
+
 
 def create_bank_deposit(request):
     if request.method == 'POST':
         form = BankDepositForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('bank_deposit_list')  # Redirect to the bank deposit list page upon successful form submission
+            return redirect('bank_deposit_list')  
     else:
         form = BankDepositForm()
-    
+
+    # Fetch all banks
+    banks = Bank.objects.all()
+
     context = {
         'form': form,
+        'banks': banks,  # Pass the banks to the context
     }
     return render(request, 'create_bank_deposit.html', context)
-
-
 class BankListView(ListView):
     model = Bank
     template_name = 'bank_list.html'
-    
 
 def create_bank(request):
     if request.method == 'POST':
         form = BankForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('bank_list')  # Redirect to the bank list page upon successful form submission
+            return redirect('bank_list')  
     else:
         form = BankForm()
-    
+
     context = {
         'form': form,
     }
-    return render(request, 'create_bank_deposit.html', context)
+    return render(request, 'create_bank.html', context)
 
 class BankDepositUpdateView(UpdateView):
     model = BankDeposit
@@ -457,11 +499,9 @@ class BankDepositDeleteView(DeleteView):
     template_name = 'delete_bank_deposit.html'
     success_url = reverse_lazy('bank_deposit_list')
 
-
 class ServiceListView(ListView):
     model = Service
     template_name = 'service_list.html'
-
 
 class ServiceCreateView(CreateView):
     model = Service
@@ -469,7 +509,7 @@ class ServiceCreateView(CreateView):
     template_name = 'create_service.html'
 
     def form_valid(self, form):
-        # You can perform additional operations here if needed before saving the form
+
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -486,7 +526,6 @@ class ServiceDeleteView(DeleteView):
     template_name = 'delete_service.html'
     success_url = reverse_lazy('service_list')
 
-
 class ProductListView(ListView):
     model = Product
     template_name = 'product_list.html'
@@ -496,7 +535,7 @@ def create_product(request):
         form = ProductForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('product_list')  # Assuming you have a URL named 'product_list' for listing products
+            return redirect('product_list')  
     else:
         form = ProductForm()
     return render(request, 'create_product.html', {'form': form})
@@ -512,13 +551,12 @@ class ProductDeleteView(DeleteView):
     template_name = 'delete_product.html'
     success_url = reverse_lazy('product_list')
 
-
 def employee_transaction_create(request):
     if request.method == 'POST':
         form = EmployeeTransactionForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('success')  # Redirect to success URL after successfully creating the transaction
+            return redirect('success')  
     else:
         form = EmployeeTransactionForm()
     return render(request, 'create_employee_transaction.html', {'form': form})
@@ -544,17 +582,101 @@ class EmployeeTransactionDeleteView(DeleteView):
     template_name = 'delete_employee_transaction.html'
     success_url = reverse_lazy('employee_transaction_list')
 
-
 class DailySummaryListView(ListView):
     model = DailySummary
     template_name = 'daily_summary_list.html'
+logger = logging.getLogger(__name__)
 
-class DailySummaryCreateView(CreateView):
-    model = DailySummary
-    form_class = DailySummaryForm
-    template_name = 'create_daily_summary.html'
-    success_url = reverse_lazy('daily_summary_list')
 
+@login_required
+def DailySummaryCreate(request):
+    if request.method == 'POST':
+        form = DailySummaryForm(request.POST)
+        if form.is_valid():
+            daily_summary = form.save()
+            # Pass the created daily_summary object to send_daily_summary_email function
+            send_daily_summary_email(request, daily_summary)
+            return redirect('daily_summary_list')
+    else:
+        last_daily_summary_date = DailySummary.objects.order_by('-date').first().date
+        # Calculate the minimum date as last_daily_summary_date + 1 day
+        min_date = last_daily_summary_date + timedelta(days=1)
+        # Pass the minimum date to the form
+        form = DailySummaryForm(initial={'min_date': min_date})
+
+    return render(request, 'create_daily_summary.html', {'form': form})
+
+def fetch_summary_data(request, date):
+    # Initialize default values
+    opening_balance = 0
+    total_received_amount = 0
+    total_expense_amount = 0
+    total_bank_deposit = 0
+    net_collection = 0
+    balance = 0
+
+    # Fetch the latest DailySummary for the selected date
+    try:
+        daily_summary = DailySummary.objects.filter(date=date).latest('created_on')
+        opening_balance = daily_summary.opening_balance
+    except DailySummary.DoesNotExist:
+        pass
+
+    # Fetch the DayClosingAdmin objects for the given date
+    day_closing_admins = DayClosingAdmin.objects.filter(date=date)
+    if day_closing_admins.exists():
+        # If there are multiple DayClosingAdmin objects, take the latest one
+        day_closing_admin = day_closing_admins.latest('created_on')
+        net_collection = day_closing_admin.net_collection
+
+    # Calculate total_received_amount from ReceiptTransactions
+    receipt_transactions_total = ReceiptTransaction.objects.filter(date=date).aggregate(total_amount=Sum('received_amount'))['total_amount'] or 0
+    total_received_amount = receipt_transactions_total + net_collection
+
+    # Calculate total_bank_deposit from BankDeposit
+    total_bank_deposit = BankDeposit.objects.filter(date=date).aggregate(amount=Sum('amount'))['amount'] or 0
+
+    # Calculate total_expense_amount from PaymentTransactions
+    payment_transactions_total = PaymentTransaction.objects.filter(date=date).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+    total_expense_amount = payment_transactions_total
+
+    # Calculate the balance
+    balance = opening_balance + total_received_amount - total_expense_amount - total_bank_deposit
+
+    # Construct data dictionary
+    data = {
+        'opening_balance': opening_balance,
+        'net_collection': net_collection,
+        'total_received_amount': total_received_amount,
+        'total_expense_amount': total_expense_amount,
+        'total_bank_deposit': total_bank_deposit,
+        'balance': balance
+    }
+
+    return JsonResponse(data)
+
+def send_daily_summary_email(request, daily_summary):
+    try:
+        # Construct HTML email content using the passed daily_summary object
+        email_subject = 'Latest Daily Summary Data'
+        email_html = render_to_string('daily_summary_email.html', {'daily_summary': daily_summary})
+        email_text = strip_tags(email_html)
+
+        # Send email to admin
+        send_mail(
+            email_subject,
+            email_text,
+            'nazbeer.ahammed@gmail.com',  # Use sender email from settings
+           # [settings.EMAIL_HOST_USER],  # Change this to your admin email address
+           ['6598040e-ceb7-44ae-a975-e1630c4856e4@mailslurp.com'],
+            html_message=email_html,
+        )
+
+        logger.info('Email sent successfully')  # Log success message
+        messages.success(request, 'Email sent successfully')  # Add success message
+    except Exception as e:
+        logger.error(f'Failed to send email: {e}')  # Log error message
+        messages.error(request, f'Failed to send email: {e}')  # Add error message
 class DailySummaryUpdateView(UpdateView):
     model = DailySummary
     form_class = DailySummaryForm
@@ -569,31 +691,69 @@ class DailySummaryDeleteView(DeleteView):
 def get_shop_details(request, name):
     try:
         shop = Shop.objects.get(name=name)
-        # Return shop details as JSON response
+
         return JsonResponse({
             'shop_name': shop.name,
             'license_number': shop.license_number,
-            # Add other shop details here
+
         })
     except Shop.DoesNotExist:
         return JsonResponse({'error': 'Shop not found'}, status=404)
+@login_required
 def create_business_profile(request):
+    error_occurred = False  
+
     if request.method == 'POST':
         business_profile_form = BusinessProfileForm(request.POST, request.FILES)
         if business_profile_form.is_valid():
-            business_profile = business_profile_form.save()
-            return redirect('success')  # Redirect to success page after successful submission
+            business_profile = business_profile_form.save(commit=False)
+            business_profile.save()
+            return redirect('success')
+        else:
+            # Form is not valid, display form with errors
+            messages.error(request, "Please correct the errors below.")
     else:
         business_profile_form = BusinessProfileForm()
 
-    # Fetch shop details
-    shop_details = Shop.objects.all()  # Adjust this query as needed based on your requirement
+    context = {'business_profile_form': business_profile_form}
+    if request.user.is_authenticated:
+        # Fetch the shop details associated with the logged-in user
+        try:
+            shop_admin = ShopAdmin.objects.get(user=request.user)
+            shop_name = shop_admin.shop.name
+            context['shop_details'] = shop_admin.shop
+            context['license_number'] = shop_admin.shop.license_number
 
-    return render(request, 'create_business_profile.html', {
-        'business_profile_form': business_profile_form,
-        'shop_details': shop_details,  # Pass shop details to the template
-    })
+            # Check if a business profile already exists with the same name as shop name
+            if BusinessProfile.objects.filter(name=shop_name).exists():
+                context['disable_submit'] = True  # Disable submit button
+                messages.info(request, "Only one business profile can be created under a shop.")
+        except ShopAdmin.DoesNotExist:
+            context['shop_details'] = None
+            context['license_number'] = None
 
+    return render(request, 'create_business_profile.html', context)
+
+
+def edit_business_profile(request, pk):
+    business_profile = get_object_or_404(BusinessProfile, pk=pk)
+    if request.method == 'POST':
+        form = BusinessProfileForm(request.POST, request.FILES, instance=business_profile)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Business profile updated successfully.')
+            return redirect('business_profile_list')
+    else:
+        form = BusinessProfileForm(instance=business_profile)
+    return render(request, 'edit_business_profile.html', {'form': form})
+
+def delete_business_profile(request, pk):
+    business_profile = get_object_or_404(BusinessProfile, pk=pk)
+    if request.method == 'POST':
+        business_profile.delete()
+        messages.success(request, 'Business profile deleted successfully.')
+        return redirect('business_profile_list')
+    return render(request, 'delete_business_profile.html', {'business_profile': business_profile})
 
 def fetch_shop_details(request):
     shop_id = request.GET.get('shop_id')
@@ -601,21 +761,41 @@ def fetch_shop_details(request):
         try:
             shop = Shop.objects.get(pk=shop_id)
             print(shop)
-            # Prepare data to send back to the client
+
             data = {
                 'license_number': '2455',
-                #'license_expiration': shop.license_expiration,
-                # Include other fields as needed
+
             }
-            #print(data)
+
             return JsonResponse(data)
         except Shop.DoesNotExist:
             return JsonResponse({'error': 'Shop not found'}, status=404)
     else:
         return JsonResponse({'error': 'Invalid request'}, status=400)
+    
+@login_required
 def business_profile_list(request):
-    profiles = BusinessProfile.objects.all()
-    return render(request, 'business_profile_list.html', {'profiles': profiles})
+    context = {}
+    if request.user.is_authenticated:
+        try:
+            # Fetch the shop details associated with the logged-in user
+            shop_admin = ShopAdmin.objects.get(user=request.user)
+            shop_name = shop_admin.shop.name
+            
+            # Filter Business Profiles based on the logged-in user's shop name
+            profiles = BusinessProfile.objects.filter(name=shop_name)
+            context['profiles'] = profiles
+            context['shop_details'] = shop_admin.shop
+            context['license_number'] = shop_admin.shop.license_number
+        except ShopAdmin.DoesNotExist:
+            context['profiles'] = None
+            context['shop_details'] = None
+            context['license_number'] = None
+    else:
+        # If user is not authenticated, set profiles to None
+        context['profiles'] = None
+
+    return render(request, 'business_profile_list.html', context)
 
 
 def profile_created(request):
@@ -635,239 +815,286 @@ def login_view(request):
                 login(request, user)
                 return redirect('home')
             else:
-                # Add error handling for invalid login
+
                 pass
     else:
         serializer = LoginSerializer()
 
     return render(request, 'login.html', {'serializer': serializer})
 
-def create_sale(request):
+def sales_by_admin_item(request):
     employees = Employee.objects.all()
     products = Product.objects.all()
     if request.method == 'POST':
         form = SalesByAdminItemForm(request.POST)
         if form.is_valid():
-            sale = form.save()
-            return HttpResponse(f'Sale created successfully with ID: {sale.id}')  # Debugging message
+            form = form.save()
+            #return HttpResponse(f'Sale created successfully')  
         else:
-            #return HttpResponse('Form is not valid')  # Debugging message
-            return render(request, 'success.html') 
+
+            return render(request, 'sales_report_admin.html') 
     else:
         form = SalesByAdminItemForm()
-    
-    return render(request, 'sales_by_admin_item_form.html', {'form': form, 'employees': employees, 'products': products})
+
+    return render(request, 'sales_by_admin_item.html', {'form': form, 'employees': employees, 'products': products})
+# @login_required
+# def sales_by_staff_service(request):
+#     employees = Employee.objects.all()
+#     services = Service.objects.all()
+#     SaleByStaffServiceFormSet = formset_factory(SaleByStaffServiceForm, extra=1)
+
+#     if request.method == 'POST':
+#         sales_form = SaleByStaffServiceFormSet(request.POST)
+#         if sales_form.is_valid():
+#             for sales_form in sales_form:
+#                 if sales_form.cleaned_data:
+#                     sales_form = sales_form.save(commit=False)
+#                     sales_form.save()
+#             return redirect('success')  # Make sure you redirect to the correct URL
+#     else:
+#         formset = SaleByStaffServiceFormSet()
+#     return render(request, 'sales_by_admin_service.html', {'formset': formset, 'services': services, 'employees':employees})
 
 def sale_by_admin_service(request):
     employees = Employee.objects.all()
     services = Service.objects.all()
 
-    SaleByAdminServiceFormSet = formset_factory(SaleByAdminServiceForm, extra=1)
-
     if request.method == 'POST':
-        formset = SaleByAdminServiceFormSet(request.POST)
-        if formset.is_valid():
-            for form in formset:
-                if form.cleaned_data:
-                    sale = form.save(commit=False)
-                    sale.save()
-            return redirect('success.html')
+        sales_form = SaleByAdminServiceForm(request.POST)
+        if sales_form.is_valid():
+            sales_form = sales_form.save(commit=False)
+            # sales_form.itemtotal = request.POST['itemTotal']
+            # sales_form.servicetotal = request.POST['serviceTotal']
+            sales_form.save()
+            return redirect('sales_report')
     else:
-        formset = SaleByAdminServiceFormSet()
+        sales_form = SaleByAdminServiceForm()
 
-    return render(request, 'sales_by_admin_service.html', {'formset': formset, 'employees': employees, 'services': services})
-
-def sale_by_admin_service(request):
-    # Fetch sales data from the database
-    sales_services = SaleByAdminService.objects.all()
-    sales_items = SalesByAdminItem.objects.all()
-
-    return render(request, 'sales_by_admin_service.html', {'sales_services': sales_services, 'sales_items': sales_items})
+    return render(request, 'sales_by_admin_service.html', {'sales_form': sales_form, 'services': services, 'employees':employees})
 
 class SaleListCreateView(generics.ListCreateAPIView):
     queryset = Sale.objects.all()
     serializer_class = SaleSerializer
 
 def submit_sale(request):
-    form = SaleForm()
+    #sales_form = SaleByAdminService()
     services = Service.objects.all()
-    
-    if request.method == 'POST':
-        form = SaleForm(request.POST)
-        if form.is_valid():
-            # Extract cleaned data from the form
-            service = form.cleaned_data['service']
-            quantity = form.cleaned_data['quantity']
-            amount = form.cleaned_data['amount']
-            discount = form.cleaned_data['discount']
-            #tip = form.cleaned_data['tip']
-            payment_method = form.cleaned_data['payment_method']
-            
-    
-            sale = form.save(commit=False)
-            sale.save()
-            
-            # Redirect to a success page
-            return render(request, 'success')
-    return render(request, 'submit_sale.html', {'form': form, 'services': services})
+    employees = Employee.objects.all()
 
-def DayClosingView(request):
+    if request.method == 'POST':
+        sales_form = SalesByStaffServiceForm(request.POST)
+        if sales_form.is_valid():
+            sales_form = sales_form.save(commit=False)
+            # sales_form.itemtotal = request.POST['itemTotal']
+            # sales_form.servicetotal = request.POST['serviceTotal']
+            sales_form.save()
+            return redirect('sales_report')
+    else:
+        sales_form = SalesByStaffServiceForm()
+
+    return render(request, 'sales-by-staff-service.html', {'sales_form': sales_form, 'services': services,'employees':employees})
+
+@login_required
+def DayClosingCreate(request):
+    employees = Employee.objects.all()
+    current_date = timezone.now().strftime('%Y-%m-%d')
+
     if request.method == 'POST':
         form = DayClosingForm(request.POST)
-        #employees = Employee.objects.all()
         if form.is_valid():
-            # Extract data from the form
-            date = form.cleaned_data['date']
-            total_services = form.cleaned_data['total_services']
-            total_sales = form.cleaned_data['total_sales']
-            total_collection = form.cleaned_data['total_collection']
-            advance = form.cleaned_data['advance']
-            net_collection = form.cleaned_data['net_collection']
-            # The employee instance is directly fetched by the clean_employee method
-            employee = form.cleaned_data['employee']
-            
-            # Fetch employee transactions based on selected employee
-            employee_transactions = EmployeeTransaction.objects.filter(employee=employee)
-
-            # Create the DayClosing object
-            day_closing = DayClosing.objects.create(
-                date=date,
-                total_services=total_services,
-                total_sales=total_sales,
-                total_collection=total_collection,
-                advance=advance,
-                net_collection=net_collection
-            )
-            # Assign the employee transactions to the day closing object
-            day_closing.employee_transactions.set(employee_transactions)
-            day_closing.save()
+            day_closing = form.save(commit=False)
+            day_closing.save()  # This line should be indented properly
             return redirect('day_closing_report')
     else:
         form = DayClosingForm()
 
-    return render(request, 'dayclosing.html', {'form': form})
+    return render(request, 'dayclosing.html', {'employees': employees, 'current_date': current_date, 'form': form})
+    
 
 
+def fetch_data(request, employee_id):
+    # Fetch data for the selected employee
+    # Example: calculate total_services, total_sales, total_collection
+    total_services = SalesByStaffItemService.objects.filter(employee_id=employee_id).aggregate(total_services=Sum('itemtotal'))['total_services'] or 0
+    total_sales = SalesByStaffItemService.objects.filter(employee_id=employee_id).aggregate(total_sales=Sum('servicetotal'))['total_sales'] or 0
+    total_collection = total_sales + total_services  # Assuming total collection is the same as total sales initially
 
+    data = {
+        'total_services': total_services,
+        'total_sales': total_sales,
+        'total_collection': total_collection
+    }
+
+    return JsonResponse(data)
+
+@login_required
 def day_closing_admin(request):
+    current_date = timezone.now().date()
+  
     if request.method == 'POST':
-        form = DayClosingFormAdmin(request.POST)
+        form = DayClosingAdminForm(request.POST)
         if form.is_valid():
-            # Extract data from the form
-            date = timezone.now().date()  # Set date to current date
-            total_collection = form.cleaned_data['total_collection']
-            advance = form.cleaned_data['advance']
-            net_collection = form.cleaned_data['net_collection']
-            
-            # Create the DayClosingAdmin object
-            day_closing_admin = DayClosingAdmin(
-                date=date,
-                total_collection=total_collection,
-                advance=advance,
-                net_collection=net_collection,
-                **DayClosingAdmin.calculate_totals()
-            )
-            day_closing_admin.save()
-            return redirect('day_closing_report')
+            form.save()
+            return redirect('day_closing_admin_report')
     else:
-        form = DayClosingFormAdmin(initial={'date': timezone.now().date()})  # Set initial date to current date
+        form = DayClosingAdminForm(initial={'date': current_date})  # Initialize with current date
 
-    return render(request, 'dayclosing_admin.html', {'form': form})
+    return render(request, 'dayclosing_admin.html', {'current_date': current_date, 'form': form })
 
+def fetch_data_admin(request, selected_date):
+    # Fetch data for the selected date
+    total_services = SalesByAdminItem.objects.filter(date=selected_date).aggregate(total_services=Sum('total_amount'))['total_services'] or 0
+    total_sales = SaleByAdminService.objects.filter(date=selected_date).aggregate(total_sales=Sum('total_amount'))['total_sales'] or 0
+    total_collection = total_sales + total_services
+    advance = DayClosing.objects.filter(date=selected_date).aggregate(total_advance=Sum('advance'))['total_advance'] or 0
 
-# def DayClosingView(request):
-#     if request.method == 'POST':
-#         date = request.POST['date']
-#         total_services = request.POST['total_services']
-#         total_sales = request.POST['total_sales']
-#         tip = request.POST.get('tip', None)
-#         total_collection = request.POST['total_collection']
-#         advance = request.POST.get('advance', None)
-#         net_collection = request.POST['net_collection']
+    # Create a dictionary containing the fetched data
+    data = {
+        'total_services': total_services,
+        'total_sales': total_sales,
+        'total_collection': total_collection,
+        'advance': advance
+    }
 
-#         day_closing = DayClosing(
-#             date=date,
-#             total_services=total_services,
-#             total_sales=total_sales,
-#             tip=tip,
-#             total_collection=total_collection,
-#             advance=advance,
-#             net_collection=net_collection
-#         )
-#         try:
-#             day_closing.save()
-#             return redirect('day_closing_report')
-#         except Exception as e:
-#             print("Error saving data:", e)
+    # Return the data as a JSON response
+    return JsonResponse(data)
 
-#     return render(request, 'dayclosing.html')
-
+@login_required
 def edit_day_closing(request, pk):
     day_closing = get_object_or_404(DayClosing, pk=pk)
+    employees = Employee.objects.all()
+    status_choices = STATUS_CHOICES 
     if request.method == 'POST':
         form = DayClosingForm(request.POST, instance=day_closing)
         if form.is_valid():
             form.save()
-            return redirect('day_closing_report')  # Redirect to day closing report page after editing
+            return redirect('day_closing_report')  
     else:
         form = DayClosingForm(instance=day_closing)
-    return render(request, 'dayclosing_edit.html', {'form': form})
-
-
+    
+    return render(request, 'dayclosing_edit.html', {'form': form, 'employees': employees, 'status_choices': status_choices })
+@login_required
 def day_closing_report(request):
     day_closings_list = DayClosing.objects.all()
-    paginator = Paginator(day_closings_list, 10)  # Show 10 entries per page
+    #day_closings_admin_list = DayClosingAdmin.objects.all()
+    paginator = Paginator(day_closings_list, 10)
+    #paginator_admin = Paginator(day_closings_admin_list, 10)
 
     page = request.GET.get('page')
+    #page_admin = request.GET.get('page_admin')
+
     try:
         day_closings = paginator.page(page)
+        #day_closings_admin = paginator_admin.page(page_admin)
     except PageNotAnInteger:
-        # If page is not an integer, deliver first page.
         day_closings = paginator.page(1)
+        #day_closings_admin = paginator_admin.page(1)
     except EmptyPage:
-        # If page is out of range (e.g. 9999), deliver last page of results.
         day_closings = paginator.page(paginator.num_pages)
+        #day_closings_admin = paginator_admin.page(paginator_admin.num_pages)
 
     return render(request, 'day_closing_report.html', {'day_closings': day_closings})
 
+@login_required
+def day_closing_admin_report(request):
+    day_closings_list = DayClosingAdmin.objects.all()
+    #day_closings_admin_list = DayClosingAdmin.objects.all()
+    paginator = Paginator(day_closings_list, 10)
+    #paginator_admin = Paginator(day_closings_admin_list, 10)
+
+    page = request.GET.get('page')
+    #page_admin = request.GET.get('page_admin')
+
+    try:
+        day_closings = paginator.page(page)
+        #day_closings_admin = paginator_admin.page(page_admin)
+    except PageNotAnInteger:
+        day_closings = paginator.page(1)
+        #day_closings_admin = paginator_admin.page(1)
+    except EmptyPage:
+        day_closings = paginator.page(paginator.num_pages)
+        #day_closings_admin = paginator_admin.page(paginator_admin.num_pages)
+
+    return render(request, 'day_closing_admin_report.html', {'day_closings': day_closings})
+
+
+@login_required
 def approve_day_closing(request, dayclosing_id):
     dayclosing = DayClosing.objects.get(pk=dayclosing_id)
+    dayclosingadmin = DayClosingAdmin.objects.get(pk=dayclosing_id)
     dayclosing.status = 'approved'
+    dayclosingadmin.status = 'approved'
     dayclosing.save()
+    dayclosingadmin.save()
     return redirect('day_closing_report')
 
-def sales_by_staff_item_service(request):
+
+@login_required
+def sales_by_staff_item(request):
+    employees = Employee.objects.all()
     products = Product.objects.all()
-    service = Service.objects.all()
+    #services = Service.objects.all()
     if request.method == 'POST':
-        form = SalesByStaffItemServiceForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect('success.html')  # Redirect to success page
+        sales_form = SaleByStaffItemForm(request.POST)
+        if sales_form.is_valid():
+            sales_form = sales_form.save(commit=False)
+            # sales_form.itemtotal = request.POST['itemTotal']
+            # sales_form.servicetotal = request.POST['serviceTotal']
+            sales_form.save()
+            return redirect('sales_report')
     else:
-        form = SalesByStaffItemServiceForm()
-    return render(request, 'sales_by_staff_item_service.html', {'form': form, 'products':products, 'services':service})
+        sales_form = SaleByStaffItemForm()
 
+    return render(request, 'sales_by_staff_item.html', {'sales_form': sales_form, 'products': products, 'employees': employees})
+
+
+@login_required
+def sales_by_staff_item_service(request):
+    employees = Employee.objects.all()
+    products = Product.objects.all()
+    services = Service.objects.all()
+    if request.method == 'POST':
+        sales_form = SalesByStaffItemServiceForm(request.POST)
+        if sales_form.is_valid():
+            sales_form = sales_form.save(commit=False)
+            # sales_form.itemtotal = request.POST['itemTotal']
+            # sales_form.servicetotal = request.POST['serviceTotal']
+            sales_form.save()
+            return redirect('sales_report')
+    else:
+        sales_form = SalesByStaffItemServiceForm()
+
+    return render(request, 'sales_by_staff_item_service.html', {'sales_form': sales_form, 'products': products, 'services': services, 'employees': employees})
+
+
+@login_required
 def sales_report(request):
-    sales_services = SaleByAdminService.objects.all()
-    sales_items = SalesByAdminItem.objects.all()
+    # Query the sales data
+    sales = SalesByStaffItemService.objects.all().select_related('employee')
+    sales_staff_service = SaleByStaffService.objects.all().select_related('employee')
+    sales_staff_item = SaleByStaffItem.objects.all().select_related('employee')
+    # employees = Employee.objects.filter(id__in=sales.values_list('employee_id', flat=True)).distinct()
 
-    print("Sales Services:", sales_services)
-    print("Sales Items:", sales_items)
-
-    context = {
-        'sales_services': sales_services,
-        'sales_items': sales_items,
-    }
-    
+    # Pass the sales data to the template
+    context = {'sales': sales, 'sales_staff_service':sales_staff_service, 'sales_staff_item':sales_staff_item}
     return render(request, 'sales_report.html', context)
+@login_required
+def sales_report_admin(request):
+    # Query the sales data
+    sales = SalesByAdminItem.objects.all().select_related('employee')
+    sales_admin_service = SaleByAdminService.objects.all().select_related('employee')
+    # employees = Employee.objects.filter(id__in=sales.values_list('employee_id', flat=True)).distinct()
+
+    # Pass the sales data to the template
+    context = {'sales': sales, 'sales_admin_service':sales_admin_service}
+    return render(request, 'sales_report_admin.html', context)
 
 def create_receipt_transaction(request):
     if request.method == 'POST':
         form = ReceiptTransactionForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('receipt_transaction_list')  # Redirect to the receipt transaction list page
+            return redirect('receipt_transaction_list')  
     else:
         form = ReceiptTransactionForm()
     return render(request, 'create_receipt_transaction.html', {'form': form})
@@ -877,15 +1104,23 @@ def create_receipt_type(request):
         form = ReceiptTypeForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('create_receipt_transaction')  # Redirect to a view showing the list of receipt types
+            return redirect('create_receipt_transaction')  
     else:
         form = ReceiptTypeForm()
     return render(request, 'create_receipt_type.html', {'form': form})
 
-class HomeView(TemplateView):
+class HomeView(LoginRequiredMixin, TemplateView):
     template_name = 'home.html'
-    
+
     def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.user.is_authenticated:
+            # Fetch the shop details associated with the logged-in user
+            try:
+                shop_admin = ShopAdmin.objects.get(user=self.request.user)
+                context['shop'] = shop_admin.shop
+            except ShopAdmin.DoesNotExist:
+                context['shop'] = None
         total_employees = Employee.objects.all().count()
         total_business = BusinessProfile.objects.all().count()
         num_products = Product.objects.all().count()
@@ -893,10 +1128,9 @@ class HomeView(TemplateView):
              {
                 'name': 'Shop Management',
                 'links': [
-                   # {'label': 'Shop List', 'url_name': 'shop_list'},
-                   # {'label': 'Create Shop', 'url_name': 'create_shop'},
+
                     {'label': 'Create Business', 'url_name': 'create_business_profile'},
-                    {'label': 'All Business Profiles', 'url_name': 'business_profile_list'},
+                    {'label': 'Business Profiles', 'url_name': 'business_profile_list'},
             ]
             },
             {
@@ -911,7 +1145,7 @@ class HomeView(TemplateView):
             {
                 'name': 'Sales by Admin',
                 'links': [
-                     {'label': 'Sales by Admin Item', 'url_name':'sales_by_admin_item_form'},
+                     {'label': 'Sales by Admin Item', 'url_name':'sales_by_admin_item'},
                      {'label': 'Sales by Admin Service', 'url_name':'sales_by_admin_service'},
                 ]
             },
@@ -919,7 +1153,7 @@ class HomeView(TemplateView):
                 'name': 'Sales by Staff',
                 'links': [
                    {'label': 'Sales by Staff - Item & Service', 'url_name':'sales_by_staff_item_service'},
-                    {'label': 'Sales by Staff', 'url_name':'submit_sale'},
+                    {'label': 'Sales by Staff - Products', 'url_name':'sales_by_staff_item'},
                 ]
             },
             {
@@ -980,4 +1214,10 @@ class HomeView(TemplateView):
             },
         ]
 
-        return {'categories': categories, 'total_employees': total_employees, 'total_business': total_business, 'num_products':num_products}
+        return {'categories': categories, 'total_employees': total_employees, 'total_business': total_business, 'num_products':num_products, **context }
+    
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            # Redirect to login page if user is not logged in
+            return redirect(reverse('login'))  # Adjust 'login' to your login URL name
+        return super().dispatch(request, *args, **kwargs)
