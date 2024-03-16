@@ -7,6 +7,10 @@ from django.utils import timezone
 from django.forms import inlineformset_factory
 from django.db.models import Sum
 from datetime import timedelta
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
+import pytz
+
 STATUS_CHOICES = [
     ('pending', 'Pending'),
     ('approved', 'Approved'),
@@ -19,17 +23,6 @@ PAYMENT_METHOD_CHOICES = (
     ("card", "Card")
 )
 
-
-# class UserProfile(models.Model):
-#     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='user_profiles')
-#     email = models.EmailField(null=True)  # Nullable email field
-#     username = models.CharField(max_length=100)
-#     password = models.CharField(max_length=100)
-#     created_on = models.DateTimeField(auto_now_add=True, null=True)
-
-#     def __str__(self):
-#         return self.username
-    
 class Modules(models.Model):
     name = models.CharField(max_length=255)
     created_on = models.DateTimeField(auto_now_add=True, null=True)
@@ -41,19 +34,13 @@ class Modules(models.Model):
     def get_sidebar_choices(cls):
 
         sidebar_choices = [
-            ('shop', 'Shop'),
-            ('business', 'Business Profile'),
-            ('employee', 'Employee'),
-            ('sale', 'Sale & Day Closing'),
-            ('role', 'Role'),
-            ('expense-type', 'Expense Type'),
-            ('receipt-transaction', 'Receipt Transaction'),
-            ('payment-transaction', 'Payment Transaction'),
-            ('service', 'Service'),
-            ('product', 'Product'),
-            ('employee-transaction', 'Employee Transaction'),
-            ('daily-summary', 'Daily Summary'),
-            ('bank', 'Bank Deposit'),
+          
+            ('day-closing',  'Day Closing'),
+            ('sales-by-staff-item-service', 'Sales by Staff - Product/Service'),
+            ('sales-by-staff-item', 'Sales by Staff - Service'),
+            ('sales-by-staff-item', 'Sales by Staff - Product'),
+            ('day-closing-report',  'Day Closing Report'),
+            ('sales-report',  'Sales Report'),
         ]
         return sidebar_choices
 
@@ -63,20 +50,6 @@ class Module(models.Model):
 
     def __str__(self):
         return self.name
-
-class Role(models.Model):
-    name = models.CharField(max_length=255)
-    modules = models.ManyToManyField(Module, default=None)
-    is_employee = models.BooleanField(default=True)
-    created_on = models.DateTimeField(auto_now_add=True, null=True)
-
-    def __str__(self):
-        return self.name
-
-for choice in Modules.get_sidebar_choices():
-    module_name = choice[1]
-    Module.objects.get_or_create(name=module_name)
-    
 
 class Shop(models.Model):
     name = models.CharField(max_length=255, verbose_name='Shop Name')
@@ -97,7 +70,6 @@ class Shop(models.Model):
 class ShopAdmin(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, unique=True, null=True, verbose_name="Mite Admin User")
     shop = models.OneToOneField(Shop, on_delete=models.CASCADE)
-    #admin_user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='shop_admin', unique=True)
     
     def __str__(self):
         if self.user:
@@ -128,25 +100,20 @@ class BusinessProfile(models.Model):
     def __str__(self):
         return self.name
 
+class Role(models.Model):
+    name = models.CharField(max_length=255)
+    modules = models.ManyToManyField(Module, default=None)
+    business_profile = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, default=None, null=True)
+    is_employee = models.BooleanField(default=True)
+    created_on = models.DateTimeField(auto_now_add=True, null=True)
 
-# class AdminProfile(models.Model):
-#     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='admin_profile')
-#     business_profile = models.ForeignKey('BusinessProfile', on_delete=models.CASCADE)
-#     email = models.EmailField()
-#     mobile = models.CharField(max_length=25, null=True)
-#     password = models.CharField(max_length=128, default='ezshop@2024')  
-#     created_on = models.DateTimeField(auto_now_add=True, null=True)
+    def __str__(self):
+        return self.name
 
-#     def save(self, *args, **kwargs):
-
-#         if not self.user.username:
-#             self.user.username = self.email  
-#         if not self.user.password:
-#             self.user.set_password(self.password)
-#         super().save(*args, **kwargs)
-
-#     def __str__(self):
-#         return self.email 
+for choice in Modules.get_sidebar_choices():
+    module_name = choice[1]
+    Module.objects.get_or_create(name=module_name)
+    
 
 class ExpenseType(models.Model):
     name = models.CharField(max_length=255)
@@ -187,8 +154,7 @@ class PaymentTransaction(models.Model):
 
 class BankDeposit(models.Model):
     date = models.DateField()
-    deposit_date = models.DateField(null=True, blank=True)  # Old field for deposit date
-    #new_deposit_date = models.DateField(null=True, blank=True)  # New field for deposit date
+    deposit_date = models.DateField(null=True, blank=True) 
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     transaction_type = models.CharField(max_length=20)  
     narration = models.TextField()
@@ -285,6 +251,7 @@ class DayClosing(models.Model):
 
 class DayClosingAdmin(models.Model):
     date = models.DateField(default=timezone.now)
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, blank=True, null=True)  
     total_services = models.PositiveIntegerField(default=0)
     total_sales = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_collection = models.DecimalField(max_digits=10, decimal_places=2)
@@ -315,18 +282,7 @@ class Sale(models.Model):
 
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     created_on = models.DateTimeField(auto_now_add=True, null=True)
-# class SaleItem(models.Model):
-#     sale = models.ForeignKey(SalesByStaffItemService, on_delete=models.CASCADE, related_name='sale_items', verbose_name=_("Sale"))
-#     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name=_("Product"),  null=True)
-#     quantity = models.PositiveIntegerField(_("Quantity"),  null=True)
-#     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_("Price"),  null=True)
-#     service = models.ForeignKey(Service, on_delete=models.CASCADE, verbose_name=_("Service"),  null=True)
-#     service_quantity = models.PositiveIntegerField(_("Service Quantity"),  null=True)
-#     service_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_("Service Price"),  null=True)
 
-#     def __str__(self):
-#         return f"{self.product.name} - {self.quantity} {self.product.unit}"
-    
 class SaleByStaffService(models.Model):
     date = models.DateField(_("Date"))
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, verbose_name=_("Employee"), null=True)
@@ -401,3 +357,14 @@ class SalesByStaffItemService(models.Model):
     
     def __str__(self):
         return f"Sale on {self.date}"
+
+@receiver(pre_save)
+def set_created_on_timezone(sender, instance, **kwargs):
+    # Check if the model has a 'created_on' field
+    if hasattr(instance, 'created_on') and not instance.created_on:
+        # Convert the current time to Dubai timezone
+        dubai_timezone = pytz.timezone('Asia/Dubai')
+        instance.created_on = timezone.localtime(timezone.now(), dubai_timezone)
+
+# Connect the signal receiver function to the pre_save signal
+pre_save.connect(set_created_on_timezone)
