@@ -29,6 +29,7 @@ USE_TZ = True
 ALLOWED_HOSTS = ['ezshopapp.onrender.com', 'localhost', '127.0.0.1']
 
 INSTALLED_APPS = [
+    'clearcache',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'ezshopapp',
     'corsheaders',
+    "bootstrap_daterangepicker",
 ]
 
 MIDDLEWARE = [
@@ -49,7 +51,20 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    "django.middleware.cache.UpdateCacheMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.cache.FetchFromCacheMiddleware",
+    'ezshopapp.middleware.DisableClientSideCacheMiddleware',
+    
 ]
+
+CSRF_COOKIE_SECURE = True  # Ensure CSRF cookie is marked as secure for HTTPS
+CSRF_COOKIE_HTTPONLY = True  # Ensure CSRF cookie is marked as HTTP-only
+CSRF_COOKIE_SAMESITE = 'Strict'  # Ensure CSRF cookie is only sent with same-site requests
+SESSION_COOKIE_AGE = 9800
+SESSION_COOKIE_SECURE = True  # Ensure session cookie is marked as secure for HTTPS
+SESSION_COOKIE_HTTPONLY = True  # Ensure session cookie is marked as HTTP-only
+
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
@@ -100,11 +115,13 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Dubai'
 
 USE_I18N = True
 
 USE_TZ = True
+
+X_FRAME_OPTIONS = 'ALLOWALL'
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

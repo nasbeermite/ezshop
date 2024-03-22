@@ -1,7 +1,9 @@
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from . import views
 from .views import *
+
 from rest_framework.routers import DefaultRouter
 
 router = DefaultRouter()
@@ -13,13 +15,15 @@ router.register(r'dailysummary', DailySummaryViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),
-    path('api/employees/login/<str:username>/<str:password>/', EmployeeViewSet.as_view({'post': 'login'}), name='employee_login'),
+    # path('api/employees/login/<str:username>/<str:password>/', EmployeeViewSet.as_view({'post': 'loginapi'}), name='employee_login'),
     path('api/employees/employee_dashboard/', EmployeeViewSet.as_view({'get': 'employee_dashboard'}), name='employee_dashboard'),
     path('api/employees/profile/', EmployeeViewSet.as_view({'get': 'profile'}), name='profile'),
     path('api/employees/logout/', EmployeeViewSet.as_view({'post': 'logout'}), name='logout'),
+    path('clearcache/', views.clear_cache_admin, name='clearcache_admin'),
     path('', CustomLoginView.as_view(), name='login'),
     path('login/', CustomLoginView.as_view(), name='login'),
     path('logout/', CustomLogoutView.as_view(), name='logout'),
+    path('reset_session_timeout/', reset_session_timeout, name='reset_session_timeout'),
     path('sidebar/', sidebar, name='sidebar'),
     path('home/', HomeView.as_view(), name='home'),
     path('admin/auth/user/add/', custom_user_add_view, name='custom_user_add'),
@@ -49,6 +53,10 @@ urlpatterns = [
     path('sale/success/', success_view, name='success'),
     path('sale/sales-by-admin-service/', sale_by_admin_service, name='sales_by_admin_service'),
     path('sale/sales-report-admin/', sales_report_admin, name='sales_report_admin'),
+    path('update_item_sales_data/', update_item_sales_data, name='update_item_sales_data'),
+    path('update_service_sales_data/', update_service_sales_data, name='update_service_sales_data'),
+   
+    path('export_sales_report_admin_pdf/', ExportSalesReportAdminPDF.as_view(), name='export_sales_report_admin_pdf'),
     path('role/', RoleListView.as_view(), name='role_list'),
     path('role/create/', create_role, name='create_role'),
     path('role/update/<int:pk>/', RoleUpdateView.as_view(), name='update_role'),
@@ -77,7 +85,7 @@ urlpatterns = [
     path('bank-deposit/update/<int:pk>/', BankDepositUpdateView.as_view(), name='update_bank_deposit'),
     path('bank-deposit/delete/<int:pk>/', BankDepositDeleteView.as_view(), name='delete_bank_deposit'),
     path('service/', ServiceListView.as_view(), name='service_list'),
-    path('service/create/', ServiceCreateView.as_view(), name='create_service'),
+    path('service/create/', create_service, name='create_service'),
     path('service/update/<int:pk>/', ServiceUpdateView.as_view(), name='update_service'),
     path('service/delete/<int:pk>/', ServiceDeleteView.as_view(), name='delete_service'),
     path('product/', ProductListView.as_view(), name='product_list'),

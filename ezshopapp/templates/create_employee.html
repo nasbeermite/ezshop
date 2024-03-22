@@ -34,7 +34,12 @@
         An error occurred while saving the form. Please try again.
     </div>
     {% endif %}
-    
+    {% if num_users_created >= max_users_allowed %}
+    <div class="alert alert-warning" role="alert">
+        Maximum number of users allowed has been reached for this shop.
+        Number of users created is  {{ num_users_created }}
+    </div>
+{% endif %}
     <!-- Display form errors if any -->
     {% if form.errors %}
     <div class="alert alert-danger" role="alert">
@@ -54,6 +59,7 @@
             
             {% for business_profile in business_profiles %}
             <input type="text" id="business_profile" name="business_profile" value="{{ business_profile.name }}" class="form-control" readonly>
+            <input type="hidden" id="business_profile_id" name="business_profile_id" value="{{ business_profile.id }}">
             {% endfor %}
         </div>
         
@@ -105,11 +111,11 @@
                 </div>
                 <div class="form-group">
                     <label for="passport_expiration_date">Passport Expiration Date:</label>
-                    <input type="date" id="passport_expiration_date" name="passport_expiration_date" class="form-control">
+                    <input type="date" id="passport_expiration_date" name="passport_expiration_date" value="{{ form.passport_expiration_date.value }}" class="form-control">
                 </div>
                 <div class="form-group">
                     <label for="id_expiration_date">ID Expiration Date:</label>
-                    <input type="date" id="id_expiration_date" name="id_expiration_date" class="form-control">
+                    <input type="date" id="id_expiration_date" name="id_expiration_date" value="{{ form.id_expiration_date.value }}" class="form-control">
                 </div>
             </div>
         </div>
@@ -139,13 +145,18 @@
             <div class="col-md-6">
                 <div class="form-group">
                     <label for="joining_date">Joining Date:</label>
-                    <input type="date" id="joining_date" name="joining_date" class="form-control">
+                    <input type="date" id="joining_date" value="{{ form.joining_date.value }}"  name="joining_date" class="form-control">
                 </div>
             </div>
             <div class="col-md-6">
                 <div class="form-group">
                     <label for="job_role">Job Role:</label>
-                    {{ form.job_role }}
+                    <select id="job_role" name="job_role" class="form-control">
+                        <option value="">Select Job Role</option>
+                        {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
             

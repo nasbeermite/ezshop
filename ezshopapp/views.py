@@ -6,9 +6,16 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect, HttpResponseBadRequest, HttpResponse, JsonResponse
-import json, jwt
+import json
+import jwt
+from django.template.loader import get_template
+from xhtml2pdf import pisa
+from django.contrib.auth import logout as auth_logout
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.core.mail.backends.smtp import EmailBackend
+from django.views.decorators.cache import cache_control
 from django.conf import settings
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
@@ -37,6 +44,16 @@ from django.urls.resolvers import RoutePattern
 from .serializers import *
 from datetime import datetime, timedelta
 from django.contrib.auth.hashers import check_password
+from django.contrib.auth.forms import AuthenticationForm
+from django.core.cache import cache
+
+####### admin cache clear
+
+def clear_cache_admin(request):
+    # Clear all cache keys
+    cache.clear()
+    return HttpResponse("Cache cleared successfully.")
+
 
 class SalesByStaffItemServiceViewSet(viewsets.ModelViewSet):
     queryset = SalesByStaffItemService.objects.all()
@@ -49,27 +66,27 @@ class EmployeeViewSet(viewsets.ViewSet):
         serializer = EmployeeSerializer(employees, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post', 'get'])
-    def login(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+    # @action(detail=False, methods=['post', 'get'])
+    # def loginapi(self, request):
+    #     username = request.data.get('username')
+    #     password = request.data.get('password')
         
-        try:
-            # Attempt to get an Employee instance with the provided username
-            employee = Employee.objects.get(username=username, password=password)
+    #     try:
+    #         # Attempt to get an Employee instance with the provided username
+    #         employee = Employee.objects.get(username=username, password=password)
             
-            # Validate the password
-            if check_password(password, employee.password):
-                # Password is correct, generate JWT token
-                secretkey = 'eyJhbGciOiJIUzI1NiJ9.eyJSb2xlIjoiQWRtaW4iLCJJc3N1ZXIiOiJJc3N1ZXIiLCJVc2VybmFtZSI6IkphdmFJblVzZSIsImV4cCI6MTcxMDQ4OTM3NywiaWF0IjoxNzEwNDg5Mzc3fQ.HUVrXY6SIzuVoFmrrssoxunYOxFJVOPRi-vv0Py-6EY'
-                token = jwt.encode({'employee_id': employee.pk, 'exp': timezone.now() + timedelta(hours=20)}, secretkey, algorithm='HS256')
-                return JsonResponse({'token': token.decode('utf-8')})
-            else:
-                # Password is incorrect
-                return JsonResponse({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
-        except Employee.DoesNotExist:
-            # Employee with the provided username does not exist
-            return JsonResponse({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
+    #         # Validate the password
+    #         if check_password(password, employee.password):
+    #             # Password is correct, generate JWT token
+    #             secretkey = 'eyJhbGciOiJIUzI1NiJ9.eyJSb2xlIjoiQWRtaW4iLCJJc3N1ZXIiOiJJc3N1ZXIiLCJVc2VybmFtZSI6IkphdmFJblVzZSIsImV4cCI6MTcxMDQ4OTM3NywiaWF0IjoxNzEwNDg5Mzc3fQ.HUVrXY6SIzuVoFmrrssoxunYOxFJVOPRi-vv0Py-6EY'
+    #             token = jwt.encode({'employee_id': employee.pk, 'exp': timezone.now() + timedelta(hours=20)}, secretkey, algorithm='HS256')
+    #             return JsonResponse({'token': token.decode('utf-8')})
+    #         else:
+    #             # Password is incorrect
+    #             return JsonResponse({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
+    #     except Employee.DoesNotExist:
+    #         # Employee with the provided username does not exist
+    #         return JsonResponse({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
         
     @action(detail=False, methods=['post'])
     def logout(self, request):
@@ -154,6 +171,7 @@ class EmployeeViewSet(viewsets.ViewSet):
             return JsonResponse({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class DayClosingViewSet(viewsets.ModelViewSet):
     queryset = DayClosing.objects.all()
     serializer_class = DayClosingSerializer
@@ -178,7 +196,57 @@ custom_user_add_view = CustomUserAddView.as_view()
 
 
 #AdminUserForm = formset_factory(AdminUserForm, extra=1)
-@login_required(login_url='login')
+
+
+class CustomLoginView(FormView):
+    template_name = 'login.html'
+    form_class = AuthenticationForm
+    success_url = '/home/'
+
+    @method_decorator(ensure_csrf_cookie)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
+    def form_valid(self, form):
+        username = form.cleaned_data['username']
+        password = form.cleaned_data['password']
+        user = authenticate(self.request, username=username, password=password)
+        if user is not None:
+            login(self.request, user)
+            # Retrieve associated shop object using a related field
+            shop = user.shop_admin.shop if hasattr(user, 'shop_admin') else None
+            print(shop)
+            if shop:
+                # Pass the shop ID to the session
+                self.request.session['shop'] = shop.id
+                # for key, value in self.request.session.items():
+                #     print(f"{key}: {value}")
+                #print(self.request.session['shop'])
+                # Similarly, retrieve other related objects and pass their IDs to the session if needed
+            return super().form_valid(form)
+        else:
+            form.add_error(None, 'Invalid login credentials')
+            return super().form_invalid(form)
+        
+class CustomLogoutView(View):
+    def get(self, request, *args, **kwargs):
+        # Clear all caches and sessions
+        # Your cache clearing logic here
+
+        # Clear session
+        request.session.flush()
+
+        # Logout user
+        auth_logout(request)
+
+        # Redirect to a desired URL after logout
+        return redirect('login')
+
+def reset_session_timeout(request):
+    request.session.modified = True  # Update the session modification time
+    return JsonResponse({'message': 'Session timeout reset successfully'})
+
+# @login_required(login_url='login')
 def sidebar(request):
 
     is_superuser = request.user.is_superuser
@@ -187,28 +255,6 @@ def sidebar(request):
 
     return render(request, 'sidebar.html', {'user': request.user, 'is_superuser': is_superuser, 'is_admin': is_admin, 'is_employee': is_employee})
 
-class CustomLoginView(FormView):
-    template_name = 'login.html'
-    form_class = CustomLoginForm
-    success_url = '/home'  
-
-    def form_valid(self, form):
-        username = form.cleaned_data['username']
-        password = form.cleaned_data['password']
-        user = authenticate(self.request, username=username, password=password)
-        if user is not None:
-            login(self.request, user)
-            return super().form_valid(form)
-        else:
-            form.add_error(None, 'Invalid login credentials') 
-            return super().form_invalid(form)
-
-    def form_invalid(self, form):
-
-        return super().form_invalid(form)
-
-class CustomLogoutView(LogoutView):
-    next_page = '/login/' 
 
 class ShopListView(ListView):
     model = Shop
@@ -296,21 +342,30 @@ class ShopDeleteView(DeleteView):
     success_url = reverse_lazy('shop_list')
 
 
-@method_decorator(login_required, name='dispatch')
+
+# @method_decorator(login_required, name='dispatch')
 class RoleListView(ListView):
     model = Role
     template_name = 'role_list.html'
-    
+    context_object_name = 'roles'  # Rename object_list to roles in the template
+
     def get_queryset(self):
-        # Get the current shop admin
-        shop_admin = ShopAdmin.objects.get(user=self.request.user)
-        # Get the associated shop
-        shop = shop_admin.shop
-        # Get the business profile associated with the shop
-        business_profile = BusinessProfile.objects.get(name=shop.name)
-        # Filter roles by the business profile
+        business_profile = self.get_business_profile()
         return Role.objects.filter(business_profile=business_profile)
-@login_required
+
+    def get_business_profile(self):
+        try:
+            # Get the current shop admin
+            shop_admin = ShopAdmin.objects.get(user=self.request.user)
+            # Get the associated shop
+            shop = shop_admin.shop
+            # Get the business profile associated with the shop
+            business_profile = BusinessProfile.objects.get(name=shop.name)
+            return business_profile
+        except (ShopAdmin.DoesNotExist, BusinessProfile.DoesNotExist):
+            return None
+        
+
 def create_role(request):
     if request.method == 'POST':
         role_name = request.POST.get('name')
@@ -351,32 +406,49 @@ def analytics_view(request):
         'total_revenue': total_revenue,
 
     })
-class RoleUpdateView(TemplateView):
+
+class RoleUpdateView(UpdateView):
+    model = Role
+    fields = "__all__"
     template_name = 'update_role.html'
+
+    def form_valid(self, form):
+        role = form.save(commit=False)
+        role.business_profile = self.get_business_profile()
+        role.save()  # Save the role after setting the business profile
+        messages.success(self.request, 'Role updated successfully.')
+        return super().form_valid(form)
+
+    def get_object(self, queryset=None):
+        role_id = self.kwargs.get('pk')
+        return get_object_or_404(Role, pk=role_id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        role_id = kwargs.get('pk')
+        role_id = self.kwargs.get('pk')
         role = get_object_or_404(Role, pk=role_id)
-        modules = Module.objects.all()  # Fetch all modules, not just those associated with the role
+        context['role'] = role
+        context['modules'] = role.modules.all()
+        context['business_profile'] = self.get_business_profile()
+        return context
+
+    def get_success_url(self):
+        return reverse_lazy('role_list')  # Redirect to the role_list page
+    
+    def get_business_profile(self):
         # Get the current shop admin
         shop_admin = ShopAdmin.objects.get(user=self.request.user)
         # Get the associated shop
         shop = shop_admin.shop
         # Get the business profile associated with the shop
-        business_profile = BusinessProfile.objects.get(name=shop.name)
-        context['role'] = role
-        context['modules'] = modules
-        context['business_profile_name'] = business_profile.name
-        context['is_employee'] = role.is_employee  # Pass is_employee value to the context
-        return context
-
+        return BusinessProfile.objects.get(name=shop.name)
+    
 class RoleDeleteView(DeleteView):
     model = Role
     template_name = 'delete_role.html'
     success_url = reverse_lazy('role_list')
 
-@login_required(login_url='login')
+# @login_required(login_url='login')
 def create_expense_type(request):
     if request.method == 'POST':
         form = ExpenseTypeForm(request.POST)
@@ -387,7 +459,7 @@ def create_expense_type(request):
         form = ExpenseTypeForm()
     return render(request, 'create_expense_type.html', {'form': form})
 
-@login_required
+# @login_required
 def employee_list(request):
     # Get the shop admin user
     shop_admin = get_object_or_404(ShopAdmin, user=request.user)
@@ -420,8 +492,7 @@ def employee_list(request):
         employees = paginator.page(paginator.num_pages)
 
     return render(request, 'employee_list.html', {'employees': employees})
-
-@login_required
+# @login_required
 def create_employee(request):
     error_occurred = False  
 
@@ -439,35 +510,50 @@ def create_employee(request):
         
         # Pass the maximum allowed users count to the template
         max_users_allowed = num_users
-        context = {
-            'num_users_created': num_users_created,
-            'max_users_allowed': max_users_allowed,
-            
-        }
-
+        # context = {
+        #     'num_users_created': num_users_created,
+        #     'max_users_allowed': max_users_allowed,
+        #     'business_profile_id': shop.id  # Pass the business_profile_id to the template context
+        # }
+    business_profiles = BusinessProfile.objects.filter(name=shop)
+    business_profile = get_object_or_404(BusinessProfile, name=shop)
+        
+        # Filter roles based on the business profile
+    roles = Role.objects.filter(business_profile=business_profile)
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
         if form.is_valid():
-            try:
-                employee = form.save(commit=False)
-                employee.save()
-                return redirect('employee_list') 
-            except Exception as e:
-                print("An error occurred while saving the form:", e)
-                error_occurred = True  
-                messages.error(request, "An error occurred while saving the form.")
+            if num_users_created >= max_users_allowed:
+                # If the maximum limit is reached, display an error message
+                error_occurred = True
+                messages.error(request, "Max User Registration limit is reached.")
+            else:
+                try:
+                    employee = form.save(commit=False)
+                    employee.business_profile_id = request.POST.get('business_profile_id')  # Set business_profile_id from POST data
+                    employee.save()
+                    return redirect('employee_list') 
+                except Exception as e:
+                    # print("An error occurred while saving the form:", e)
+                    error_occurred = True  
+                    messages.error(request, "An error occurred while saving the form.")
     else:
         form = EmployeeForm()
 
     # Filter Business Profiles based on the shop associated with the logged-in user
-    business_profiles = BusinessProfile.objects.filter(name=shop)
+    
 
     context = {
-        'form': form,
-        'business_profiles': business_profiles,
-        'error_occurred': error_occurred,
-        'nationalities': NATIONALITIES,  # Pass NATIONALITIES to the template context
+    'form': form,
+    'roles':roles,
+    'business_profiles': business_profiles,
+    'error_occurred': error_occurred,
+    'num_users_created': num_users_created,
+    'max_users_allowed': max_users_allowed,
+    'business_profile_id': shop.id,
+    'nationalities': NATIONALITIES,  # Pass NATIONALITIES to the template context
     }
+
     return render(request, 'create_employee.html', context)
 
 
@@ -498,32 +584,30 @@ def employee_delete(request, pk):
     return render(request, 'employee_delete.html', {'employee': employee})
 
 
+@csrf_protect
 def employee_login(request):
+    error_message = None  # Initialize error_message variable
+    
     if request.method == 'POST':
         form = EmployeeLoginForm(request.POST)
         if form.is_valid():
             username = form.cleaned_data['username']
             password = form.cleaned_data['password']
             
-            # Query the Employee model to check if the username and password match
             try:
                 employee = Employee.objects.get(username=username)
             except Employee.DoesNotExist:
                 employee = None
             
-            # Check if the employee exists and if the password matches
             if employee is not None and employee.password == password:
-                # If authentication is successful, create a session for the employee and redirect to the dashboard
                 request.session['employee_id'] = employee.pk
                 return redirect('employee_dashboard')
             else:
-                # If authentication fails, display error message and reload login page
-                messages.error(request, "Invalid username or password.")
-                return redirect('employee_login')
+                error_message = "Invalid username or password."  # Set error message
     else:
         form = EmployeeLoginForm()
-    return render(request, 'employee_login.html', {'form': form})
-
+    
+    return render(request, 'employee_login.html', {'form': form, 'error_message': error_message})
 
 def employee_logout(request):
     # Remove employee_id from the session if it exists
@@ -542,7 +626,6 @@ def employee_logout(request):
     """
     
     return response
-
 def employee_dashboard(request):
     # Get the employee_id from the session
     employee_id = request.session.get('employee_id')
@@ -576,10 +659,15 @@ def employee_dashboard(request):
             com_cal = 0
     else:
         com_cal = 0
-    commission = (total_services + total_sales) * com_cal
+
+    # Check if total_services and total_sales are not None
+    if total_services is not None and total_sales is not None:
+        commission = (total_services + total_sales) * com_cal
+    else:
+        commission = 0  # Set commission to 0 if total_services or total_sales is None
+
     # Prepare data for the chart
     chart_data = [{
-        
         'date': closing.date.strftime('%Y-%m-%d'),
         'total_services': float(closing.total_services),
         'total_sales': float(closing.total_sales),
@@ -596,7 +684,7 @@ def employee_dashboard(request):
         'total_services': total_services,
         'total_sales': total_sales,
         'total_advance': total_advance,
-        'commission':commission,
+        'commission': commission,
         'chart_data_json': chart_data_json,
     }
     return render(request, 'employee_dashboard.html', context)
@@ -735,24 +823,74 @@ class BankDepositDeleteView(DeleteView):
     template_name = 'delete_bank_deposit.html'
     success_url = reverse_lazy('bank_deposit_list')
 
-class ServiceListView(ListView):
+# @login_required
+class ServiceListView(LoginRequiredMixin, ListView):
     model = Service
     template_name = 'service_list.html'
+    context_object_name = 'services'
+
     def get_queryset(self):
-            # Return the queryset of DailySummary objects sorted by date in ascending order
-            return Service.objects.order_by('-created_on')
+        # Retrieve the shop associated with the logged-in user
+        try:
+            shop_admin = ShopAdmin.objects.get(user=self.request.user)
+            shop = shop_admin.shop
+            business = BusinessProfile.objects.get(license_number=shop.license_number)
+            print("shop license:", shop.license_number)
+            print("business id:", business.id)
+            print("business license:", business.license_number)
+        # try:
+        #     # Assuming there's an intermediary model linking User and Shop
+        #     shop_admin = user.shop_admin
+        #     print("shop_admin =", shop_admin)
+        #     shop = shop_admin.shop
+        except AttributeError:
+        #     # Handle cases where the user is not associated with a shop
+            business = None
+        
+        # Filter services based on the retrieved shop
+        queryset = Service.objects.filter(business_profile=business.id)
+        return queryset
     
-class ServiceCreateView(CreateView):
-    model = Service
-    form_class = ServiceForm
-    template_name = 'create_service.html'
+# class ServiceListView(ListView):
+#     model = Service
+#     template_name = 'service_list.html'
+#     success_url = reverse_lazy('service_list')
+    # def get_queryset(self):
+    #         # Return the queryset of DailySummary objects sorted by date in ascending order
+    #         shop_admin = get_object_or_404(ShopAdmin, user=self.request.user)
+        
+    #         # Get the shop associated with the shop admin
+    #         shop = shop_admin.shop
+    #         print(shop)
+    #         # Get the business profile associated with the shop
+    #         business_profile = get_object_or_404(BusinessProfile, name=shop.name)
+    #         print(Service.objects.filter(business_profile=business_profile.id).order_by('-created_on'))
+    #         return Service.objects.filter(business_profile=business_profile.id).order_by('-created_on')
 
-    def form_valid(self, form):
+def create_service(request):
+    shop_admin = get_object_or_404(ShopAdmin, user=request.user)
+    
+    # Get the shop associated with the shop admin
+    shop = shop_admin.shop
+    
+    # Get the business profile associated with the shop
+    business_profile = get_object_or_404(BusinessProfile, name=shop.name)
+    
+    # Print business_profile to verify
+    # print(business_profile)
+    
+    if request.method == 'POST':
+        form = ServiceForm(request.POST)
+        if form.is_valid():
+            # Set the business profile for the service before saving
+            service = form.save(commit=False)
+            service.business_profile = business_profile.id
+            service.save()
+            return redirect('service_list')  
+    else:
+        form = ServiceForm()
+    return render(request, 'create_service.html', {'form': form, 'business_profile': business_profile.id})
 
-        return super().form_valid(form)
-
-    def get_success_url(self):
-        return reverse('service_list') 
 
 class ServiceUpdateView(UpdateView):
     model = Service
@@ -768,19 +906,52 @@ class ServiceDeleteView(DeleteView):
 class ProductListView(ListView):
     model = Product
     template_name = 'product_list.html'
+    
+    context_object_name = 'product'
+
     def get_queryset(self):
-        # Return the queryset of DailySummary objects sorted by date in ascending order
-        return Product.objects.order_by('-created_on')
+        # Retrieve the shop associated with the logged-in user
+        try:
+            shop_admin = ShopAdmin.objects.get(user=self.request.user)
+            shop = shop_admin.shop
+            business = BusinessProfile.objects.get(license_number=shop.license_number)
+            print("shop license:", shop.license_number)
+            print("business id:", business.id)
+            print("business license:", business.license_number)
+        # try:
+        #     # Assuming there's an intermediary model linking User and Shop
+        #     shop_admin = user.shop_admin
+        #     print("shop_admin =", shop_admin)
+        #     shop = shop_admin.shop
+        except AttributeError:
+        #     # Handle cases where the user is not associated with a shop
+            business = None
+        
+        # Filter services based on the retrieved shop
+        queryset = Product.objects.filter(business_profile=business.id)
+        return queryset
     
 def create_product(request):
+    shop_admin = get_object_or_404(ShopAdmin, user=request.user)
+    
+    # Get the shop associated with the shop admin
+    shop = shop_admin.shop
+    
+    # Get the business profile associated with the shop
+    business_profile = get_object_or_404(BusinessProfile, name=shop.name)
+  
+    
     if request.method == 'POST':
         form = ProductForm(request.POST)
         if form.is_valid():
-            form.save()
+            # Set the business profile for the product before saving
+            product = form.save(commit=False)
+            product.business_profile = business_profile.id
+            product.save()
             return redirect('product_list')  
     else:
         form = ProductForm()
-    return render(request, 'create_product.html', {'form': form})
+    return render(request, 'create_product.html', {'form': form, 'business_profile': business_profile.id})
 
 class ProductUpdateView(UpdateView):
     model = Product
@@ -838,7 +1009,7 @@ class DailySummaryListView(ListView):
 logger = logging.getLogger(__name__)
 
 
-@login_required
+# @login_required
 def DailySummaryCreate(request):
     if request.method == 'POST':
         form = DailySummaryForm(request.POST)
@@ -949,7 +1120,7 @@ def get_shop_details(request, name):
         })
     except Shop.DoesNotExist:
         return JsonResponse({'error': 'Shop not found'}, status=404)
-@login_required
+# @login_required
 def create_business_profile(request):
     error_occurred = False  
 
@@ -985,6 +1156,7 @@ def create_business_profile(request):
     return render(request, 'create_business_profile.html', context)
 
 
+
 def edit_business_profile(request, pk):
     business_profile = get_object_or_404(BusinessProfile, pk=pk)
     if request.method == 'POST':
@@ -995,7 +1167,7 @@ def edit_business_profile(request, pk):
             return redirect('business_profile_list')
     else:
         form = BusinessProfileForm(instance=business_profile)
-    return render(request, 'edit_business_profile.html', {'form': form})
+    return render(request, 'edit_business_profile.html', {'form': form, 'business_profile': business_profile})
 
 def delete_business_profile(request, pk):
     business_profile = get_object_or_404(BusinessProfile, pk=pk)
@@ -1023,7 +1195,7 @@ def fetch_shop_details(request):
     else:
         return JsonResponse({'error': 'Invalid request'}, status=400)
     
-@login_required
+
 def business_profile_list(request):
     context = {}
     if request.user.is_authenticated:
@@ -1054,6 +1226,7 @@ def profile_created(request):
 def success_view(request):
     return render(request, 'success.html')
 
+@cache_control(max_age=18000)  # 5 hours in seconds
 def login_view(request):
     if request.method == 'POST':
         serializer = LoginSerializer(data=request.POST)
@@ -1065,31 +1238,32 @@ def login_view(request):
                 login(request, user)
                 return redirect('home')
             else:
-
-                pass
+                # Invalid login credentials, display error message
+                messages.error(request, 'Invalid username or password. Please try again.')
     else:
         serializer = LoginSerializer()
 
     return render(request, 'login.html', {'serializer': serializer})
+
 def sales_by_admin_item(request):
     # Get the business profile associated with the logged-in user
     try:
         shop_admin = ShopAdmin.objects.get(user=request.user)
         business_profile = BusinessProfile.objects.get(name=shop_admin.shop.name)
-        print(business_profile)
+        # print(business_profile)
         employees = Employee.objects.filter(business_profile=shop_admin.shop)
+        
+        products = Product.objects.filter(business_profile=business_profile.id)
+        # print(products)
     except (ShopAdmin.DoesNotExist, BusinessProfile.DoesNotExist):
         employees = Employee.objects.none()
 
-    products = Product.objects.all()
-    
     if request.method == 'POST':
         form = SalesByAdminItemForm(request.POST)
         if form.is_valid():
             form = form.save()
             # return HttpResponse(f'Sale created successfully')  
-        else:
-            return render(request, 'sales_report_admin.html') 
+            return redirect('sales_report_admin')
     else:
         form = SalesByAdminItemForm()
 
@@ -1100,12 +1274,12 @@ def sale_by_admin_service(request):
     try:
         shop_admin = ShopAdmin.objects.get(user=request.user)
         business_profile = BusinessProfile.objects.get(name=shop_admin.shop.name)
-        print(business_profile)
+        # print(business_profile)
         employees = Employee.objects.filter(business_profile=shop_admin.shop)
+
+        services = Service.objects.filter(business_profile=business_profile.id)
     except (ShopAdmin.DoesNotExist, BusinessProfile.DoesNotExist):
         employees = Employee.objects.none()
-
-    services = Service.objects.all()
 
     if request.method == 'POST':
         sales_form = SaleByAdminServiceForm(request.POST)
@@ -1114,7 +1288,7 @@ def sale_by_admin_service(request):
             # sales_form.itemtotal = request.POST['itemTotal']
             # sales_form.servicetotal = request.POST['serviceTotal']
             sales_form.save()
-            return redirect('sales_report')
+            return redirect('sales_report_admin')
     else:
         sales_form = SaleByAdminServiceForm()
 
@@ -1214,7 +1388,7 @@ def fetch_data(request, employee_id):
     }
 
     return JsonResponse(data)
-@login_required
+
 def day_closing_admin(request):
     current_date = timezone.now().date()
 
@@ -1294,7 +1468,7 @@ def day_closing_report(request):
 
     return render(request, 'day_closing_report.html', {'day_closings': day_closings})
 
-@login_required
+
 def day_closing_admin_report(request):
     day_closings_list = DayClosingAdmin.objects.all()
 
@@ -1318,7 +1492,7 @@ def day_closing_admin_report(request):
     return render(request, 'day_closing_admin_report.html', {'day_closings': day_closings})
 
 
-@login_required
+
 def approve_day_closing(request, dayclosing_id):
     dayclosing = DayClosing.objects.get(pk=dayclosing_id)
     dayclosingadmin = DayClosingAdmin.objects.get(pk=dayclosing_id)
@@ -1333,10 +1507,15 @@ def approve_day_closing(request, dayclosing_id):
 def sales_by_staff_item(request):
     employee_id = request.session.get('employee_id')
 
-    # Filter employees based on the retrieved employee ID
-    employees = Employee.objects.filter(id=employee_id)
-    products = Product.objects.all()
-    #services = Service.objects.all()
+    # Retrieve the employee
+    employee = Employee.objects.filter(id=employee_id)
+    
+
+    # Filter products based on the retrieved employee's business profile
+    
+    products = Product.objects.filter(business_profile=employee.business_profile)
+  
+    print(products)
     if request.method == 'POST':
         sales_form = SaleByStaffItemForm(request.POST)
         if sales_form.is_valid():
@@ -1348,7 +1527,7 @@ def sales_by_staff_item(request):
     else:
         sales_form = SaleByStaffItemForm()
 
-    return render(request, 'sales_by_staff_item.html', {'sales_form': sales_form, 'products': products, 'employees': employees})
+    return render(request, 'sales_by_staff_item.html', {'sales_form': sales_form, 'products': products, 'employee': employee})
 
 
 
@@ -1386,17 +1565,144 @@ def sales_report(request):
     context = {'sales': sales, 'sales_staff_service': sales_staff_service, 'sales_staff_item': sales_staff_item}
     return render(request, 'sales_report.html', context)
 
-@login_required
 def sales_report_admin(request):
-    # Query the sales data
-    sales = SalesByAdminItem.objects.all().select_related('employee')
-    sales_admin_service = SaleByAdminService.objects.all().select_related('employee')
-    # employees = Employee.objects.filter(id__in=sales.values_list('employee_id', flat=True)).distinct()
+    try:
+        shop_admin = ShopAdmin.objects.get(user=request.user)
+        shop = shop_admin.shop
+        business = BusinessProfile.objects.get(license_number=shop.license_number)
+        employees = Employee.objects.filter(business_profile=business)
+        sales = SalesByAdminItem.objects.filter(employee__in=employees).select_related('employee')
+        service_sales = SaleByAdminService.objects.filter(employee__in=employees).select_related('employee')
+        # print("shop license:", shop.license_number)
+        # print("business id:", business.id)
+        # print("business license:", business.license_number)
+        # print("sales", sales)
+        # print("service_sales", service_sales)
+    except AttributeError:
+        business = None
+        employees = None
 
-    # Pass the sales data to the template
-    context = {'sales': sales, 'sales_admin_service':sales_admin_service}
+    # if employees:
+        # Filter sales by item
+        start_date_item = request.GET.get('start_date_item')
+        end_date_item = request.GET.get('end_date_item')
+        
+        if start_date_item and end_date_item:
+            start_date_item = datetime.strptime(start_date_item, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date_item = datetime.strptime(end_date_item, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=999999)
+            sales = SalesByAdminItem.objects.filter(employee__in=employees, date__range=(start_date_item, end_date_item)).select_related('employee')
+            
+            print(sales)
+        else:
+            sales = SalesByAdminItem.objects.filter(employee__in=employees).select_related('employee')
+            print(sales)
+        # Filter sales by service
+        start_date_service = request.GET.get('start_date_service')
+        end_date_service = request.GET.get('end_date_service')
+        
+        if start_date_service and end_date_service:
+            start_date_service = datetime.strptime(start_date_service, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date_service = datetime.strptime(end_date_service, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=999999)
+            service_sales = service_sales.filter(date__range=(start_date_service, end_date_service))
+        else:
+            service_sales = SaleByAdminService.objects.filter(employee__in=employees).select_related('employee')
+
+    
+    context = {
+        'sales': sales,
+        'service_sales': service_sales,
+    }
     return render(request, 'sales_report_admin.html', context)
 
+def update_item_sales_data(request):
+    try:
+        shop_admin = ShopAdmin.objects.get(user=request.user)
+        shop = shop_admin.shop
+        business = BusinessProfile.objects.get(license_number=shop.license_number)
+        employees = Employee.objects.filter(business_profile=business)
+        sales = SalesByAdminItem.objects.filter(employee__in=employees).select_related('employee')
+        #service_sales = SaleByAdminService.objects.filter(employee__in=employees).select_related('employee')
+        # print("shop license:", shop.license_number)
+        # print("business id:", business.id)
+        # print("business license:", business.license_number)
+        # print("sales", sales)
+        # print("service_sales", service_sales)
+    except AttributeError:
+        business = None
+        employees = None
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    print("start date: ", start_date)
+    # Retrieve filtered item sales data based on the selected date range
+    sales = SalesByAdminItem.objects.filter(date__range=[start_date, end_date]).values('date',
+        'employee__id',
+        'employee__employee_id',
+        'employee__first_name',
+        'employee__second_name',
+        'item__name',
+        'quantity',
+        'price',
+        'discount',
+        'total_amount',
+        'payment_method')
+    print(sales)
+    return JsonResponse(list(sales), safe=False)
+
+def update_service_sales_data(request):
+    try:
+        shop_admin = ShopAdmin.objects.get(user=request.user)
+        shop = shop_admin.shop
+        business = BusinessProfile.objects.get(license_number=shop.license_number)
+        employees = Employee.objects.filter(business_profile=business)
+        #sales = SalesByAdminItem.objects.filter(employee__in=employees).select_related('employee')
+        service_sales = SaleByAdminService.objects.filter(employee__in=employees).select_related('employee')
+    except AttributeError:
+        business = None
+        employees = None
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    print("start date service: ", start_date)
+    # Retrieve filtered service sales data based on the selected date range
+    service_sales = SaleByAdminService.objects.filter(date__range=[start_date, end_date]).values('date',
+        'employee__id',
+        'employee__employee_id',
+        'employee__first_name',
+        'employee__second_name',
+        'service__name',
+        'quantity',
+        'price',
+        'discount',
+        'total_amount',
+        'payment_method')
+    print(service_sales)
+    return JsonResponse(list(service_sales), safe=False)
+
+class ExportSalesReportAdminPDF(View):
+    def get(self, request, *args, **kwargs):
+        report_type = request.GET.get('report_type')
+
+        if report_type == 'item':
+            sales = SalesByAdminItem.objects.all()
+            filename = 'sales_report_item.pdf'
+        elif report_type == 'service':
+            services = SaleByAdminService.objects.all()
+            filename = 'sales_report_service.pdf'
+        else:
+            return HttpResponse('Invalid report type.')
+
+        template_path = 'sales_report_pdf_template.html'
+        context = {'sales': sales, 'services': services}
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        template = get_template(template_path)
+        html = template.render(context)
+
+        # Create PDF
+        pisa_status = pisa.CreatePDF(html, dest=response)
+        if pisa_status.err:
+            return HttpResponse('PDF creation error.')
+        return response
+    
 def create_receipt_transaction(request):
     if request.method == 'POST':
         form = ReceiptTransactionForm(request.POST)
@@ -1433,21 +1739,27 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 # print(employees)
                 # Total Services, Total Sales, and Total Advance Given for each month
                 today = timezone.now()
-                current_month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                # current_month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-                # Total Services (This Month)
+                # End of the month
+                next_month = start_of_month.replace(month=start_of_month.month + 1, day=1)
+                end_of_month = next_month - timezone.timedelta(days=1)
+
+                # Total Services (This Month) employee__in=employees
                 total_services_this_month = DayClosingAdmin.objects.filter(
-                    date__gte=current_month_start, employee__in=employees
+                    date__range=[start_of_month, end_of_month],
+                    employee__in=employees
                 ).aggregate(total_services=Sum('total_services'))['total_services'] or 0
 
-                # Total Sales (This Month)
+                # Total Sales (This Month) employee__in=employees
                 total_sales_this_month = DayClosingAdmin.objects.filter(
-                    date__gte=current_month_start, employee__in=employees
+                    date__range=[start_of_month, end_of_month], employee__in=employees,
                 ).aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
 
-                # Total Advance Given (This Month)
+                # Total Advance Given (This Month) employee__in=employees
                 total_advance_given_this_month = DayClosingAdmin.objects.filter(
-                    date__gte=current_month_start, employee__in=employees
+                    date__range=[start_of_month, end_of_month], employee__in=employees,
                 ).aggregate(total_advance=Sum('advance'))['total_advance'] or 0
 
                 context['total_services_this_month'] = total_services_this_month
