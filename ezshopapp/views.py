@@ -8,8 +8,10 @@ from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect, HttpResponseBadRequest, HttpResponse, JsonResponse
 import json
 import jwt
+import calendar
 from django.template.loader import get_template
 from xhtml2pdf import pisa
+from django.http import HttpResponseNotFound
 from django.contrib.auth import logout as auth_logout
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -626,6 +628,7 @@ def employee_logout(request):
     """
     
     return response
+
 def employee_dashboard(request):
     # Get the employee_id from the session
     employee_id = request.session.get('employee_id')
@@ -639,24 +642,24 @@ def employee_dashboard(request):
     # Fetch the associated Shop for the employee
     shop = Shop.objects.filter(name=business_profile.name).first()
     
-    # Aggregate total services, total sales, and total advance
-    total_services = DayClosing.objects.filter(employee_id=employee_id).aggregate(total_services=Sum('total_services'))['total_services']
-    total_sales = DayClosing.objects.filter(employee_id=employee_id).aggregate(total_sales=Sum('total_sales'))['total_sales']
-    total_advance = DayClosing.objects.filter(employee_id=employee_id).aggregate(total_advance=Sum('advance'))['total_advance']
+    # Get the current month and year
+    current_month = timezone.now().month
+    current_year = timezone.now().year
 
-    ten_days_ago = datetime.now() - timedelta(days=10)
+    # Get the first and last day of the current month
+    first_day_of_month = timezone.datetime(current_year, current_month, 1)
+    last_day_of_month = timezone.datetime(current_year, current_month, calendar.monthrange(current_year, current_month)[1])
 
-    # Query the database for transactions for the last 10 days
-    day_closings = DayClosing.objects.filter(employee_id=employee_id, date__gte=ten_days_ago)
-    
-    #Commission calculation
+    # Aggregate total services, total sales, and total advance for the current month
+    day_closings = DayClosing.objects.filter(employee_id=employee_id, date__gte=first_day_of_month, date__lte=last_day_of_month) or 0
+    total_services = day_closings.aggregate(total_services=Sum('total_services'))['total_services'] or 0
+    total_sales = day_closings.aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
+    print(total_sales)
+    total_advance = day_closings.aggregate(total_advance=Sum('advance'))['total_advance'] or 0
 
-    if employee:
-        com_per = employee.commission_percentage
-        if com_per:
-            com_cal = com_per / 100
-        else:
-            com_cal = 0
+    # Commission calculation
+    if employee and employee.commission_percentage:
+        com_cal = employee.commission_percentage / 100
     else:
         com_cal = 0
 
@@ -671,7 +674,8 @@ def employee_dashboard(request):
         'date': closing.date.strftime('%Y-%m-%d'),
         'total_services': float(closing.total_services),
         'total_sales': float(closing.total_sales),
-        'advance': float(closing.advance)
+        'advance': float(closing.advance),
+        
     } for closing in day_closings]
 
     # Convert data to JSON format
@@ -1300,10 +1304,24 @@ class SaleListCreateView(generics.ListCreateAPIView):
 
 def submit_sale(request):
     employee_id = request.session.get('employee_id')
+    employees = Employee.objects.get(id=employee_id)
+    print(employees.id)
+    
+        # business_profile = employee.business_profile_id.businessprofile_set.first()
+    business_profile = BusinessProfile.objects.get(id=employees.id)
+    print("BP: ", business_profile)
+    # except Employee.DoesNotExist:
+    #     # Handle the case where the employee does not exist
+    #     # You might want to redirect the user or show an error message
+    #     return render(request, 'error.html')
 
-    # Filter employees based on the retrieved employee ID
-    employees = Employee.objects.filter(id=employee_id)
-    services = Service.objects.all()
+    # Retrieve products based on the employee's business profile
+    if business_profile:
+        services = Service.objects.filter(business_profile=business_profile)
+    else:
+        # Handle the case where there's no business profile associated with the employee
+        # You might want to redirect the user or show an error message
+        return render(request, 'error.html')
     
 
     if request.method == 'POST':
@@ -1551,19 +1569,39 @@ def approve_day_closing(request, dayclosing_id):
     dayclosingadmin.save()
     return redirect('day_closing_report')
 
+def error_view(request):
+    # Your condition to choose between base.html and emp_base.html
+    use_emp_base = True  # Example condition, replace it with your actual condition
 
+    # Render the error.html template with the chosen base template
+    return render(request, 'error.html', {'use_emp_base': use_emp_base})
 
+def handler404(request, exception):
+    # Call error_view with 404 condition
+    return error_view(request)
 def sales_by_staff_item(request):
     employee_id = request.session.get('employee_id')
-
+    
     # Retrieve the employee
-    employee = Employee.objects.filter(id=employee_id)
+    # try:
+    employee = Employee.objects.get(id=employee_id)
+    print(employee.id)
     
+        # business_profile = employee.business_profile_id.businessprofile_set.first()
+    business_profile = BusinessProfile.objects.get(id=employee.id)
+    print("BP: ", business_profile)
+    # except Employee.DoesNotExist:
+    #     # Handle the case where the employee does not exist
+    #     # You might want to redirect the user or show an error message
+    #     return render(request, 'error.html')
 
-    # Filter products based on the retrieved employee's business profile
-    
-    products = Product.objects.filter(business_profile=employee.business_profile)
-  
+    # Retrieve products based on the employee's business profile
+    if business_profile:
+        products = Product.objects.filter(business_profile=business_profile)
+    else:
+        # Handle the case where there's no business profile associated with the employee
+        # You might want to redirect the user or show an error message
+        return render(request, 'error.html')
     print(products)
     if request.method == 'POST':
         sales_form = SaleByStaffItemForm(request.POST)
@@ -1584,9 +1622,17 @@ def sales_by_staff_item_service(request):
     employee_id = request.session.get('employee_id')
 
     # Filter employees based on the retrieved employee ID
-    employees = Employee.objects.filter(id=employee_id)
-    products = Product.objects.all()
-    services = Service.objects.all()
+    employees = Employee.objects.get(id=employee_id)
+    print(employees.id)
+    
+    business_profile = BusinessProfile.objects.get(id=employees.id)
+    
+    if business_profile:
+        products = Product.objects.filter(business_profile=business_profile)
+        services = Service.objects.filter(business_profile=business_profile)
+    else:
+       return render(request, 'error.html')
+   
     if request.method == 'POST':
         sales_form = SalesByStaffItemServiceForm(request.POST)
         if sales_form.is_valid():
@@ -1771,6 +1817,63 @@ def create_receipt_type(request):
     else:
         form = ReceiptTypeForm()
     return render(request, 'create_receipt_type.html', {'form': form})
+
+def license_expiration_reminder_due(license_expiration, reminder_days):
+    return (license_expiration - timezone.now().date()).days <= reminder_days
+
+def vat_submission_date_reminder_due(submission_dates, reminder_days):
+    today = timezone.now().date()
+    return any((date and (date - today).days <= reminder_days) for date in submission_dates)
+
+def notification_view(request):
+    notifications = []
+
+    # Fetch the shop associated with the current user
+    shop_admin = get_object_or_404(ShopAdmin, user=request.user)
+    shop = shop_admin.shop
+    print(shop.license_number)
+    # Check if all reminder flags are True for the shop
+    if shop.vat_remainder and shop.employee_transaction_window \
+            and shop.license_expiration_reminder \
+            and shop.employee_visa_expiration_reminder \
+            and shop.employee_passport_expiration_reminder:
+        
+        # Get the associated BusinessProfile
+            business_profile = BusinessProfile.objects.get(license_number=shop.license_number)
+            print(business_profile)
+            # Get employees associated with the business profile
+            employees = Employee.objects.filter(business_profile=business_profile)
+
+            # Check which reminder has the earliest due date
+            earliest_due_date = None
+            earliest_due_reminder = None
+
+            if business_profile.vat_submission_date_reminder_due():
+                earliest_due_date = business_profile.vat_submission_date_1
+                earliest_due_reminder = 'VAT submission date'
+            if business_profile.license_expiration_reminder_due():
+                if earliest_due_date is None or earliest_due_date > business_profile.license_expiration:
+                    earliest_due_date = business_profile.license_expiration
+                    earliest_due_reminder = 'License expiration'
+            if any(employee.id_expiration_due() for employee in employees):
+                earliest_id_due_date = min([employee.id_expiration_date for employee in employees if employee.id_expiration_due()])
+                if earliest_due_date is None or earliest_due_date > earliest_id_due_date:
+                    earliest_due_date = earliest_id_due_date
+                    earliest_due_reminder = 'Employee ID expiration'
+            if any(employee.passport_expiration_due() for employee in employees):
+                earliest_passport_due_date = min([employee.passport_expiration_date for employee in employees if employee.passport_expiration_due()])
+                if earliest_due_date is None or earliest_due_date > earliest_passport_due_date:
+                    earliest_due_date = earliest_passport_due_date
+                    earliest_due_reminder = 'Employee passport expiration'
+
+        # If there's a due reminder, add it to the notifications
+            if earliest_due_reminder:
+                days_until_reminder = (earliest_due_date - timezone.now().date()).days
+                notifications.append(f'{earliest_due_reminder} reminder: {days_until_reminder} days left')
+
+    # Render the template with the notifications
+    return render(request, 'notification_list.html', {'notifications': notifications})
+
 class HomeView(LoginRequiredMixin, TemplateView):
     template_name = 'home.html'
 
@@ -1785,39 +1888,41 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 
                 # Get employees associated with the shop
                 employees = Employee.objects.filter(business_profile=context['shop'])
-                # print(employees)
-                # Total Services, Total Sales, and Total Advance Given for each month
+                
                 today = timezone.now()
-                # current_month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-                # End of the month
                 next_month = start_of_month.replace(month=start_of_month.month + 1, day=1)
                 end_of_month = next_month - timezone.timedelta(days=1)
 
-                # Total Services (This Month) employee__in=employees
-                total_services_this_month = DayClosingAdmin.objects.filter(
-                    date__range=[start_of_month, end_of_month],
-                    employee__in=employees
-                ).aggregate(total_services=Sum('total_services'))['total_services'] or 0
+                # Fetch day closings for the current month
+                day_closings = DayClosingAdmin.objects.filter(date__range=[start_of_month, end_of_month], employee__in=employees)
+                
+                # Calculate totals for services, sales, and advances for the current month
+                total_services_this_month = day_closings.aggregate(total_services=Sum('total_services'))['total_services'] or 0
+                total_sales_this_month = day_closings.aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
+                total_advance_given_this_month = day_closings.aggregate(total_advance=Sum('advance'))['total_advance'] or 0
 
-                # Total Sales (This Month) employee__in=employees
-                total_sales_this_month = DayClosingAdmin.objects.filter(
-                    date__range=[start_of_month, end_of_month], employee__in=employees,
-                ).aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
+                # Prepare chart data
+                chart_data_json = [{
+                    'date': closing.date.strftime('%Y-%m-%d'),
+                    'total_services': float(closing.total_services),
+                    'total_sales': float(closing.total_sales),
+                    'advance': float(closing.advance),
+                } for closing in day_closings]
 
-                # Total Advance Given (This Month) employee__in=employees
-                total_advance_given_this_month = DayClosingAdmin.objects.filter(
-                    date__range=[start_of_month, end_of_month], employee__in=employees,
-                ).aggregate(total_advance=Sum('advance'))['total_advance'] or 0
-
+                # Add totals to the context
                 context['total_services_this_month'] = total_services_this_month
                 context['total_sales_this_month'] = total_sales_this_month
                 context['total_advance_given_this_month'] = total_advance_given_this_month
+                context['chart_data_json'] = json.dumps(chart_data_json)
 
             except ShopAdmin.DoesNotExist:
                 context['shop'] = None
-
+                context['total_services_this_month'] = 0
+                context['total_sales_this_month'] = 0
+                context['total_advance_given_this_month'] = 0
+                context['chart_data_json'] = '[]'
+                
         categories = [
             {
                 'name': 'Shop Management',
