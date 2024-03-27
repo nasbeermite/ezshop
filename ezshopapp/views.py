@@ -560,6 +560,14 @@ def create_employee(request):
     return render(request, 'create_employee.html', context)
 
 
+def check_username_availability(request):
+    username = request.GET.get('username')
+    if Employee.objects.filter(username=username).exists():
+        available = False
+    else:
+        available = True
+    return JsonResponse({'available': available})
+
 def get_employee_data(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
     data = {
@@ -652,12 +660,18 @@ def employee_dashboard(request):
     last_day_of_month = timezone.datetime(current_year, current_month, calendar.monthrange(current_year, current_month)[1])
 
     # Aggregate total services, total sales, and total advance for the current month
-    day_closings = DayClosing.objects.filter(employee_id=employee_id, date__gte=first_day_of_month, date__lte=last_day_of_month) or 0
-    total_services = day_closings.aggregate(total_services=Sum('total_services'))['total_services'] or 0
-    total_sales = day_closings.aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
-    print(total_sales)
-    total_advance = day_closings.aggregate(total_advance=Sum('advance'))['total_advance'] or 0
+    day_closings = DayClosing.objects.filter(employee_id=employee_id, date__gte=first_day_of_month, date__lte=last_day_of_month)
 
+    # Check if day_closings is not empty
+    if day_closings.exists():
+        total_services = day_closings.aggregate(total_services=Sum('total_services'))['total_services'] or 0
+        total_sales = day_closings.aggregate(total_sales=Sum('total_sales'))['total_sales'] or 0
+        total_advance = day_closings.aggregate(total_advance=Sum('advance'))['total_advance'] or 0
+    else:
+        # If day_closings is empty, set totals to 0
+        total_services = 0
+        total_sales = 0
+        total_advance = 0
     # Commission calculation
     if employee and employee.commission_percentage:
         com_cal = employee.commission_percentage / 100
@@ -1024,7 +1038,13 @@ def DailySummaryCreate(request):
             send_daily_summary_email(request, daily_summary)
             return redirect('daily_summary_list')
     else:
-        last_daily_summary_date = DailySummary.objects.order_by('-date').first().date
+        last_daily_summary = DailySummary.objects.order_by('-date').first()
+        if last_daily_summary:
+            last_daily_summary_date = last_daily_summary.date
+        else:
+            # If no daily summaries exist, set last_daily_summary_date to a default value
+            last_daily_summary_date = datetime.now().date() - timedelta(days=1)
+
         # Calculate the minimum date as last_daily_summary_date + 1 day
         min_date = last_daily_summary_date + timedelta(days=1)
         # Pass the minimum date to the form
@@ -1309,16 +1329,16 @@ def submit_sale(request):
     print(employees.id)
     
         # business_profile = employee.business_profile_id.businessprofile_set.first()
-    business_profile = BusinessProfile.objects.get(id=employees.id)
-    print("BP: ", business_profile)
+    # business_profile = BusinessProfile.objects.get(id=employees.id)
+    # print("BP: ", business_profile)
     # except Employee.DoesNotExist:
     #     # Handle the case where the employee does not exist
     #     # You might want to redirect the user or show an error message
     #     return render(request, 'error.html')
 
     # Retrieve products based on the employee's business profile
-    if business_profile:
-        services = Service.objects.filter(business_profile=business_profile)
+    if employees:
+        services = Service.objects.filter(business_profile=employees.business_profile_id)
     else:
         # Handle the case where there's no business profile associated with the employee
         # You might want to redirect the user or show an error message
@@ -1587,19 +1607,10 @@ def sales_by_staff_item(request):
     # Retrieve the employee
     # try:
     employee = Employee.objects.get(id=employee_id)
-    print(employee.id)
-    
-        # business_profile = employee.business_profile_id.businessprofile_set.first()
-    business_profile = BusinessProfile.objects.get(id=employee.id)
-    print("BP: ", business_profile)
-    # except Employee.DoesNotExist:
-    #     # Handle the case where the employee does not exist
-    #     # You might want to redirect the user or show an error message
-    #     return render(request, 'error.html')
 
     # Retrieve products based on the employee's business profile
-    if business_profile:
-        products = Product.objects.filter(business_profile=business_profile)
+    if employee:
+        products = Product.objects.filter(business_profile=employee.business_profile_id)
     else:
         # Handle the case where there's no business profile associated with the employee
         # You might want to redirect the user or show an error message
@@ -1627,11 +1638,11 @@ def sales_by_staff_item_service(request):
     employees = Employee.objects.get(id=employee_id)
     print(employees.id)
     
-    business_profile = BusinessProfile.objects.get(id=employees.id)
+
     
-    if business_profile:
-        products = Product.objects.filter(business_profile=business_profile)
-        services = Service.objects.filter(business_profile=business_profile)
+    if employees:
+        products = Product.objects.filter(business_profile=employees.business_profile_id)
+        services = Service.objects.filter(business_profile=employees.business_profile_id)
     else:
        return render(request, 'error.html')
    
@@ -1826,52 +1837,57 @@ def license_expiration_reminder_due(license_expiration, reminder_days):
 def vat_submission_date_reminder_due(submission_dates, reminder_days):
     today = timezone.now().date()
     return any((date and (date - today).days <= reminder_days) for date in submission_dates)
-
+# Notification view
 def notification_view(request):
     notifications = []
 
     # Fetch the shop associated with the current user
     shop_admin = get_object_or_404(ShopAdmin, user=request.user)
     shop = shop_admin.shop
-    print(shop.license_number)
+
+    # Get the associated BusinessProfile
+    business_profile = BusinessProfile.objects.get(license_number=shop.license_number)
+    business_profileID=business_profile.id
     # Check if all reminder flags are True for the shop
     if shop.vat_remainder and shop.employee_transaction_window \
             and shop.license_expiration_reminder \
-            and shop.employee_visa_expiration_reminder \
-            and shop.employee_passport_expiration_reminder:
-        
-        # Get the associated BusinessProfile
-            business_profile = BusinessProfile.objects.get(license_number=shop.license_number)
-            print(business_profile)
-            # Get employees associated with the business profile
-            employees = Employee.objects.filter(business_profile=business_profile)
+            and shop.employee_visa_expiration_reminder :
+            # and shop.employee_passport_expiration_reminder:
 
-            # Check which reminder has the earliest due date
-            earliest_due_date = None
-            earliest_due_reminder = None
+        # Get employees associated with the business profile
+        employees = Employee.objects.filter(business_profile_id=business_profileID)
 
-            if business_profile.vat_submission_date_reminder_due():
-                earliest_due_date = business_profile.vat_submission_date_1
-                earliest_due_reminder = 'VAT submission date'
-            if business_profile.license_expiration_reminder_due():
-                if earliest_due_date is None or earliest_due_date > business_profile.license_expiration:
-                    earliest_due_date = business_profile.license_expiration
-                    earliest_due_reminder = 'License expiration'
-            if any(employee.id_expiration_due() for employee in employees):
-                earliest_id_due_date = min([employee.id_expiration_date for employee in employees if employee.id_expiration_due()])
-                if earliest_due_date is None or earliest_due_date > earliest_id_due_date:
-                    earliest_due_date = earliest_id_due_date
-                    earliest_due_reminder = 'Employee ID expiration'
-            if any(employee.passport_expiration_due() for employee in employees):
-                earliest_passport_due_date = min([employee.passport_expiration_date for employee in employees if employee.passport_expiration_due()])
-                if earliest_due_date is None or earliest_due_date > earliest_passport_due_date:
-                    earliest_due_date = earliest_passport_due_date
-                    earliest_due_reminder = 'Employee passport expiration'
+        # Check which reminder has the earliest due date
+        earliest_due_date = None
+        earliest_due_reminder = None
+
+        if business_profile.vat_submission_date_reminder_due():
+            earliest_due_date = business_profile.vat_submission_date_1
+            earliest_due_reminder = 'VAT submission date'
+        if business_profile.license_expiration_reminder_due():
+            if earliest_due_date is None or earliest_due_date > business_profile.license_expiration:
+                earliest_due_date = business_profile.license_expiration
+                earliest_due_reminder = 'License expiration'
+        if any(employee.id_expiration_due() for employee in employees):
+            earliest_id_due_date = min([employee.id_expiration_date for employee in employees if employee.id_expiration_due()])
+            if earliest_due_date is None or earliest_due_date > earliest_id_due_date:
+                earliest_due_date = earliest_id_due_date
+                earliest_due_reminder = 'Employee ID expiration'
+        # if any(employee.passport_expiration_due() for employee in employees):
+        #     earliest_passport_due_date = min([employee.passport_expiration_date for employee in employees if employee.passport_expiration_due()])
+        #     if earliest_due_date is None or earliest_due_date > earliest_passport_due_date:
+        #         earliest_due_date = earliest_passport_due_date
+        #         earliest_due_reminder = 'Employee passport expiration'
 
         # If there's a due reminder, add it to the notifications
-            if earliest_due_reminder:
-                days_until_reminder = (earliest_due_date - timezone.now().date()).days
-                notifications.append(f'{earliest_due_reminder} reminder: {days_until_reminder} days left')
+        if earliest_due_reminder:
+            days_until_reminder = (earliest_due_date - timezone.now().date()).days
+            notifications.append({
+                'reminder_type': earliest_due_reminder,
+                'expiration_date': earliest_due_date,
+                'reminder_days': days_until_reminder,
+                'employee_visa_reminder_days': business_profile.employee_visa_expiration_reminder_days
+            })
 
     # Render the template with the notifications
     return render(request, 'notification_list.html', {'notifications': notifications})
