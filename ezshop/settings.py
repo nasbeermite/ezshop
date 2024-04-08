@@ -90,12 +90,38 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'ezshop.wsgi.application'
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+#     }
+# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        # 'ENGINE': 'django.db.backends.mysql',
+        # 'OPTIONS': {
+        #     'init_command': "SET sql_mode='STRICT_TRANS_TABLES",
+        # },
+        # 'USER': 'root',
+        # 'PASSWORD': 'Mite@2024!',
+        # 'HOST': 'localhost',
+        # 'PORT': '3307',
+        # 'NAME': 'ezshopdb',
     }
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'ezshopdb',  # Replace with your database name
+#         'USER': 'root',  # Replace with your database username
+#         'PASSWORD': 'El2m63fqXH9eQczR0HF98v4qtaM3PfDu',  # Replace with your database password
+#         'HOST': 'dpg-co4q5ncf7o1s738vjdk0-a',  # Replace with your database host
+#         'PORT': '5432',  # Replace with your database port
+#     }
+# }
 
 AUTH_PASSWORD_VALIDATORS = [
     {

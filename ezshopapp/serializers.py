@@ -80,10 +80,10 @@ class DailySummarySerializer(serializers.ModelSerializer):
         model = DailySummary
         fields = '__all__'
 
-class SaleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Sale
-        fields = '__all__'
+# class SaleSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Sale
+#         fields = '__all__'
 
 class SalesByStaffItemServiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -94,7 +94,17 @@ class SaleByStaffServiceSerializer(serializers.ModelSerializer):
         model = SaleByStaffService
         fields = '__all__'
 
+class SalesByStaffItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SaleByStaffItem
+        fields = '__all__'
+
 class DayClosingSerializer(serializers.ModelSerializer):
     class Meta:
         model = DayClosing
+        fields = '__all__'
+
+class DayClosingAdminSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DayClosingAdmin
         fields = '__all__'
