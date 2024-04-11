@@ -217,7 +217,7 @@ class CustomLoginView(FormView):
             login(self.request, user)
             # Retrieve associated shop object using a related field
             shop = user.shop_admin.shop if hasattr(user, 'shop_admin') else None
-            print(shop)
+            #print(shop)
             if shop:
                 # Pass the shop ID to the session
                 self.request.session['shop'] = shop.id
@@ -966,9 +966,9 @@ class ProductListView(ListView):
                 return redirect('login')
             shop = shop_admin.shop
             business = BusinessProfile.objects.get(license_number=shop.license_number)
-            print("shop license:", shop.license_number)
-            print("business id:", business.id)
-            print("business license:", business.license_number)
+            #print("shop license:", shop.license_number)
+            #print("business id:", business.id)
+            #print("business license:", business.license_number)
         # try:
         #     # Assuming there's an intermediary model linking User and Shop
         #     shop_admin = user.shop_admin
@@ -1239,7 +1239,7 @@ def fetch_shop_details(request):
     if shop_id:
         try:
             shop = Shop.objects.get(pk=shop_id)
-            print(shop)
+            #print(shop)
 
             data = {
                 'license_number': '2455',
@@ -1365,7 +1365,7 @@ def sale_by_admin_service(request):
 def submit_sale(request):
     employee_id = request.session.get('employee_id')
     employees = Employee.objects.get(id=employee_id)
-    print(employees.id)
+    # print(employees.id)
       
     role = Role.objects.filter(name=employees.job_role).first()
             
@@ -1503,12 +1503,12 @@ def day_closing_admin(request):
             return redirect('day_closing_admin_report')
     else:
         form = DayClosingAdminForm(initial={'date': current_date.strftime('%Y-%m-%d')})  # Initialize with current date
-    print(current_date.strftime('%Y-%m-%d'))
+    #print(current_date.strftime('%Y-%m-%d'))
     return render(request, 'dayclosing_admin.html', {'current_date': current_date, 'remaining_employees':remaining_employees,'form': form})
 def fetch_data_admin(request, selected_date, employee_id):
     # Convert the employee_id to an integer
     employee_id = int(employee_id)
-    print("emp id", employee_id)
+    #print("emp id", employee_id)
     # Fetch total services for the selected date and employee
     total_services = (
         SaleByAdminService.objects.filter(date=selected_date, employee_id=employee_id)
@@ -1522,7 +1522,7 @@ def fetch_data_admin(request, selected_date, employee_id):
         SaleByStaffService.objects.filter(date=selected_date, employee_id=employee_id)
         .aggregate(total_services=Sum('total_amount'))['total_services'] or 0
     )
-    print(total_services)
+    #print(total_services)
     # Fetch total sales for the selected date and employee
     total_sales = (
         SalesByAdminItem.objects.filter(date=selected_date, employee_id=employee_id)
@@ -1576,7 +1576,7 @@ def fetch_remaining_employees(request, selected_date):
     # Filter employees who haven't done day closing on the selected date
     remaining_employees = all_employees.exclude(id__in=employees_with_day_closing)
     
-    # print('remaing:', remaining_employees)
+    # #print('remaing:', remaining_employees)
     # Serialize remaining employees data
     
     if not remaining_employees:
@@ -1612,7 +1612,7 @@ def day_closing_report(request):
     # Filter the DayClosing queryset to get only the day closings associated with the logged-in employee
     day_closings_list = DayClosing.objects.filter(employee__id=logged_in_employee_id).order_by('-created_on')
     employees = Employee.objects.get(id=logged_in_employee_id)
-    # print(employees.id)
+    # #print(employees.id)
       
     role = Role.objects.filter(name=employees.job_role).first()
             
@@ -1682,11 +1682,11 @@ def sales_by_staff_item(request):
     # try:
     employee = Employee.objects.get(id=employee_id)
     role = Role.objects.filter(name=employee.job_role).first()
-    # print("Role:", role)
+    # #print("Role:", role)
             
     # Get active modules based on the filtered role
     active_modules = role.modules.all()
-    # print("Active Modules:", active_modules)
+    # #print("Active Modules:", active_modules)
     
     # Retrieve products based on the employee's business profile
     if employee:
@@ -2005,22 +2005,22 @@ def notification_view(request):
 def sidebar_emp(request):
     # Fetch employee ID from session
     employee_id = request.session.get('employee_id')
-    print("Employee ID from session:", employee_id)
+    #print("Employee ID from session:", employee_id)
     
     # Fetch employee details
     employee = get_object_or_404(Employee, pk=employee_id)
-    print("Employee Details:", employee)
+    #print("Employee Details:", employee)
     
     # Check if the employee has a job_role
     if employee.job_role:
         # If job_role exists, filter roles based on it
         role = Role.objects.filter(name=employee.job_role).first()
-        print("Role:", role)
+        #print("Role:", role)
         
         if role:
             # Get active modules based on the filtered role
             active_modules = role.modules.all()
-            print("Active Modules:", active_modules)
+            #print("Active Modules:", active_modules)
             
             context = {
                 'active_modules': active_modules,
@@ -2063,6 +2063,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 next_month = start_of_month.replace(month=start_of_month.month + 1, day=1)
                 end_of_month = next_month - timezone.timedelta(days=1)
+                current_month_year = timezone.now().strftime("%B %Y") 
                 total_services_all = 0
                 total_sales_all = 0
                 # Fetch day closings from both models using a Union query
@@ -2081,7 +2082,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
                     total_sales_annotated=Cast('total_sales', output_field=DecimalField()),
                     total_advance_annotated=Cast('advance', output_field=DecimalField())  # Assuming advance is a DecimalField
                 ).values('date', 'employee', 'total_services_annotated', 'total_sales_annotated', 'total_advance_annotated')
-                print(day_closings_admin)
+                # print(day_closings_admin)
                 # Combine the two querysets using Union
                 combined_day_closings = day_closings1.union(day_closings_admin)
 
@@ -2095,14 +2096,13 @@ class HomeView(LoginRequiredMixin, TemplateView):
 
                     # Perform processing or actions with the extracted data
                     # For example, you can print the information
-                    print(f"Date: {date}, Employee: {employee}, Total Services: {total_services}, Total Sales: {total_sales}, Total Advance: {total_advance}")
+                    # print(f"Date: {date}, Employee: {employee}, Total Services: {total_services}, Total Sales: {total_sales}, Total Advance: {total_advance}")
 
                     # Or you can perform other operations, such as calculations or saving to another data structure
                     # For instance, you might aggregate the total services and total sales for all employees
                     total_services_all += total_services
                     total_sales_all += total_sales
-                    print(total_services_all)
-                    print(total_sales_all)
+                    
                 # Optionally, you can pass the combined_day_closings queryset to the template context
                     context = {
                         'combined_day_closings': combined_day_closings,
@@ -2150,6 +2150,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 context['chart_data_json'] = json.dumps(chart_data_json)
                 context['employee_json'] = json.dumps(employee_totals)
                 context['employees'] = employees
+                context['current_month_year'] = current_month_year
                 # print(json.dumps(employee_totals))
             except ShopAdmin.DoesNotExist:
                 context['shop'] = None
@@ -2158,6 +2159,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 context['total_advance_given_this_month'] = 0
                 context['chart_data_json'] = '[]'
                 context['employee_json'] = '[]'
+                context['current_month_year'] = current_month_year
                 
         categories = [
             {
@@ -2170,15 +2172,17 @@ class HomeView(LoginRequiredMixin, TemplateView):
             {
                 'name': 'Role Management',
                 'links': [
-                    {'label': 'Role List', 'url_name': 'role_list'},
                     {'label': 'Create Role', 'url_name': 'create_role'},
+                    {'label': 'Role List', 'url_name': 'role_list'},
+                   
                 ]
             },
             {
                 'name': 'Employee Management',
                 'links': [
+                        {'label': 'Create Employee', 'url_name': 'create_employee'},
                     {'label': 'Employee List', 'url_name': 'employee_list'},
-                    {'label': 'Create Employee', 'url_name': 'create_employee'},
+                  
                 ]
             },
         ]
