@@ -60,6 +60,8 @@ class BankDepositSerializer(serializers.ModelSerializer):
         model = BankDeposit
         fields = '__all__'
 
+
+
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
@@ -69,6 +71,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = '__all__'
+
 
 class EmployeeTransactionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -85,26 +88,40 @@ class DailySummarySerializer(serializers.ModelSerializer):
 #         model = Sale
 #         fields = '__all__'
 
+
+
 class SalesByStaffItemServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesByStaffItemService
         fields = '__all__'
+
+
 class SaleByStaffServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleByStaffService
         fields = '__all__'
+
 
 class SalesByStaffItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleByStaffItem
         fields = '__all__'
 
+
 class DayClosingSerializer(serializers.ModelSerializer):
     class Meta:
         model = DayClosing
         fields = '__all__'
 
+
 class DayClosingAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = DayClosingAdmin
         fields = '__all__'
+
+
+class BusinessProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model =BusinessProfile
+        fields ='__all__'
+
